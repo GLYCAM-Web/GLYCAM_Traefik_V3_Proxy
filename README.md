@@ -11,6 +11,9 @@ cd GLYCAM_Traefik_V3_Proxy
 
 echo "export LE_EMAIL='insert-your@email.address'" > config.bash
 
+## Optionally, if you want to do a dry run:
+export TEST="YES"
+
 bash start.sh
 
 ```
@@ -84,6 +87,13 @@ bash start.sh
 
        The current traefik log. Others should be time-stamped and compressed (gzip).
        Traefik will generate and maintain this file.
+
+    - `./logs/start_STDOUT_${DATE}.log`
+      `./logs/start_STDERR_${DATE}.log`
+      `./logs/stop_STDOUT_${DATE}.log`
+      `./logs/stop_STDERR_${DATE}.log`
+
+       Logs written by this script upon startup or shutdown.
 
 - `ACCESS_LOGS/`
 
