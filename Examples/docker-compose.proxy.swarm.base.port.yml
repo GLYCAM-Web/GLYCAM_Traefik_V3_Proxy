@@ -1,0 +1,13 @@
+##############################################################
+#  LIVE_SWARM Proxy Stack for website access on local port   #
+##############################################################
+services:
+  my-proxy-service:
+    ports:
+      - target: 80
+        published: ${EXTERNAL_PORT}
+        protocol: tcp
+        mode: ingress
+    deploy:
+      mode: replicated
+      replicas: 1

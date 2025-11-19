@@ -1,0 +1,12 @@
+## General Patterns
+.nfs*
+*.swp
+*~
+*git-ignore-me*
+
+## Repo-specific Patterns
+logs
+ACCESS_LOGS
+acme
+config.bash
+

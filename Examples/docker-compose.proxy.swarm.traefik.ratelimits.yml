@@ -1,0 +1,78 @@
+##############################################################
+#   LIVE_SWARM Proxy Stack for website access via Traefik    #
+#   Rate limits : must be loaded after base and https.       #
+#                                                            #
+#   DOMAIN is the host, e.g., sub.example.com                #
+#   DOT_DOMAIN is the DOMAIN but with with dots enclosed     #
+#       by square braces, e.g., 'sub[.]example[.]com'.       #
+#   SERVICE_ID is an identifier that separates this service  #
+#       from others operating in the same swarm.             #
+##############################################################
+services:
+  my-proxy-service:
+    deploy:
+      labels: 
+        ####
+        #### Middlewares
+        ####
+        # Middleware for Internal Browser Traffic (high limit or unlimited) - period of 1s is default
+        - "traefik.http.middlewares.${SERVICE_ID}-middleware-ratelimit-browser.ratelimit.average=1000"
+        - "traefik.http.middlewares.${SERVICE_ID}-middleware-ratelimit-browser.ratelimit.burst=10000"
+        - "traefik.http.middlewares.${SERVICE_ID}-middleware-ratelimit-browser.ratelimit.period=1s"
+        # Middleware for External/Script Service Request Traffic (strict limit, e.g., 1 POST per 10 sec sustained)
+        - "traefik.http.middlewares.${SERVICE_ID}-middleware-ratelimit-script-service.ratelimit.average=1"
+        - "traefik.http.middlewares.${SERVICE_ID}-middleware-ratelimit-script-service.ratelimit.burst=5"
+        - "traefik.http.middlewares.${SERVICE_ID}-middleware-ratelimit-script-service.ratelimit.period=10s"
+        # Middleware for External/Script Information Request Traffic (strict limit, e.g., 6/sec sustained)
+        - "traefik.http.middlewares.${SERVICE_ID}-middleware-ratelimit-script-other.ratelimit.average=1"
+        - "traefik.http.middlewares.${SERVICE_ID}-middleware-ratelimit-script-other.ratelimit.burst=5"
+        - "traefik.http.middlewares.${SERVICE_ID}-middleware-ratelimit-script-other.ratelimit.period=1s"
+        ####
+        #### Routers
+        ####
+        ##
+        ## Basic routers override (full defintions in another file)
+        ##
+        # HTTPS Router Rule Override
+        - "traefik.http.routers.${SERVICE_ID}-main-web-router.rule=host(`${DOMAIN}`) && !PathPrefix(`/json/`)"
+        ## HTTP Router (redirect to HTTPS) Rule Override
+        - "traefik.http.routers.${SERVICE_ID}-http-catchall.rule=host(`${DOMAIN}`) && !PathPrefix(`/json/`)"
+        ##
+        ## Rate limiting routers
+        ##
+        # 1. Router for Internal Browser Traffic (No/Lenient Limit)
+        # This router allows traffic referred by any of our websites to have very generous rate limits.
+        # Priority 1000 ensures this specific Referer match is checked first.
+        # For the regular expression:
+        #   - Use single quotes and [.] to match a literal dot, avoiding complex backslash escaping issues.
+        - 'traefik.http.routers.${SERVICE_ID}-api-browser-internal.rule=Host(`${DOMAIN}`) && PathPrefix(`/json/`) && HeaderRegexp(`Referer`, `^https://${DOT_DOMAIN}.*`)'
+        - "traefik.http.routers.${SERVICE_ID}-api-browser-internal.middlewares=${SERVICE_ID}-middleware-ratelimit-browser@swarm"
+        - "traefik.http.routers.${SERVICE_ID}-api-browser-internal.priority=1000"
+        - "traefik.http.routers.${SERVICE_ID}-api-browser-internal.entrypoints=websecure"
+        - "traefik.http.routers.${SERVICE_ID}-api-browser-internal.tls=true"
+        - "traefik.http.routers.${SERVICE_ID}-api-browser-internal.tls.certresolver=le"
+        #
+        # 2. Router for External/Script SERVICE (POST) Request (Strict Limit)
+        # This router limits all POST methods to the /json/ endpoint. The limit is one action per 10s average, with a burst of 5.
+        # Priority 500 ensures this specific PathPrefix and Method match is checked second.
+        #
+        # This router matches all other traffic to /json/ that didn't match Router 1 and that uses the POST method.
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-service.rule=host(`${DOMAIN}`) && PathPrefix(`/json/`) && Method(`POST`) "
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-service.middlewares=${SERVICE_ID}-middleware-ratelimit-script-service@swarm"
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-service.priority=500"
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-service.entrypoints=websecure"
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-service.tls=true"
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-service.tls.certresolver=le"
+        #
+        # 3. Router for ALL OTHER (e.g., GET) External/Script Traffic (Strict Limit)
+        # This router limits all non-POST methods to the /json/ endpoint. The limit is one action per 1s average, with a burst of 2.
+        # Priority 300 ensures this specific PathPrefix match is checked third.
+        #
+        # This router matches all other traffic to /json/ that didn't match Router 1 or 2.
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-other.rule=Host(`${DOMAIN}`) && PathPrefix(`/json/`)"
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-other.middlewares=${SERVICE_ID}-middleware-ratelimit-script-other@swarm"
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-other.priority=300"
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-other.entrypoints=websecure"
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-other.tls=true"
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-other.tls.certresolver=le"
+

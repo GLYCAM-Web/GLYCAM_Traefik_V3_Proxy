@@ -1,0 +1,54 @@
+##############################################################
+#   LIVE_SWARM Proxy Stack for website access via Traefik    #
+#                                                            #
+#   DOMAIN is the host, e.g., sub.example.com                #
+#   DOT_DOMAIN is the DOMAIN but with with dots enclosed     #
+#       by square braces, e.g., 'sub[.]example[.]com'.       #
+#   SERVICE_ID is an identifier that separates this service  #
+#       from others operating in the same swarm.             #
+##############################################################
+services:
+  my-proxy-service:
+    deploy:
+      labels: 
+        - "traefik.enable=true"
+        - "traefik.swarm.network=traefik_proxy_net"
+        - "traefik.constraint-label=traefik-proxy_net"
+        - "traefik.port=80"
+        - "traefik.http.services.my-proxy-service.loadbalancer.server.port=80"
+
+        ####
+        #### Middlewares
+        ####
+        # Middlewares definition for HTTP->HTTPS 
+        - "traefik.http.middlewares.${SERVICE_ID}-https-redirect.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.${SERVICE_ID}-https-redirect.redirectscheme.permanent=true"
+        ####
+        #### Routers
+        ####
+        ##
+        ## Basic routers (rate-limiting routers are in another file)
+        ##
+        # HTTPS Router
+        - "traefik.http.routers.${SERVICE_ID}-main-web-router.entrypoints=websecure"
+        - "traefik.http.routers.${SERVICE_ID}-main-web-router.rule=host(`${DOMAIN}`)"
+        - "traefik.http.routers.${SERVICE_ID}-main-web-router.priority=20"
+        - "traefik.http.routers.${SERVICE_ID}-main-web-router.tls=true"
+        - "traefik.http.routers.${SERVICE_ID}-main-web-router.tls.certresolver=le"
+        # HTTP Router (redirect to HTTPS)
+        - "traefik.http.routers.${SERVICE_ID}-http-catchall.entrypoints=web"
+        - "traefik.http.routers.${SERVICE_ID}-http-catchall.rule=host(`${DOMAIN}`)"
+        - "traefik.http.routers.${SERVICE_ID}-http-catchall.priority=10"
+        - "traefik.http.routers.${SERVICE_ID}-http-catchall.middlewares=${SERVICE_ID}-https-redirect"
+
+    networks:
+     - traefik 
+       # this is just a name given it here - it can be anything, but must match below
+
+networks:
+  traefik:
+    external: true
+    name: traefik_proxy_net 
+    # this is the name of the actual network
+
+
