@@ -51,6 +51,7 @@ services:
         - "traefik.http.routers.${SERVICE_ID}-api-browser-internal.entrypoints=websecure"
         - "traefik.http.routers.${SERVICE_ID}-api-browser-internal.tls=true"
         - "traefik.http.routers.${SERVICE_ID}-api-browser-internal.tls.certresolver=le"
+        - "traefik.http.routers.${SERVICE_ID}-api-browser-internal.service=${SERVICE_ID}-proxy-service"
         #
         # 2. Router for External/Script SERVICE (POST) Request (Strict Limit)
         # This router limits all POST methods to the /json/ endpoint. The limit is one action per 10s average, with a burst of 5.
@@ -63,6 +64,7 @@ services:
         - "traefik.http.routers.${SERVICE_ID}-api-external-script-service.entrypoints=websecure"
         - "traefik.http.routers.${SERVICE_ID}-api-external-script-service.tls=true"
         - "traefik.http.routers.${SERVICE_ID}-api-external-script-service.tls.certresolver=le"
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-service.service=${SERVICE_ID}-proxy-service"
         #
         # 3. Router for ALL OTHER (e.g., GET) External/Script Traffic (Strict Limit)
         # This router limits all non-POST methods to the /json/ endpoint. The limit is one action per 1s average, with a burst of 2.
@@ -75,4 +77,5 @@ services:
         - "traefik.http.routers.${SERVICE_ID}-api-external-script-other.entrypoints=websecure"
         - "traefik.http.routers.${SERVICE_ID}-api-external-script-other.tls=true"
         - "traefik.http.routers.${SERVICE_ID}-api-external-script-other.tls.certresolver=le"
+        - "traefik.http.routers.${SERVICE_ID}-api-external-script-other.service=${SERVICE_ID}-proxy-service"
 

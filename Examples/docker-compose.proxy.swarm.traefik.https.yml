@@ -15,7 +15,7 @@ services:
         - "traefik.swarm.network=traefik_proxy_net"
         - "traefik.constraint-label=traefik-proxy_net"
         - "traefik.port=80"
-        - "traefik.http.services.my-proxy-service.loadbalancer.server.port=80"
+        - "traefik.http.services.${SERVICE_ID}-proxy-service.loadbalancer.server.port=80"
 
         ####
         #### Middlewares
@@ -35,11 +35,13 @@ services:
         - "traefik.http.routers.${SERVICE_ID}-main-web-router.priority=20"
         - "traefik.http.routers.${SERVICE_ID}-main-web-router.tls=true"
         - "traefik.http.routers.${SERVICE_ID}-main-web-router.tls.certresolver=le"
+        - "traefik.http.routers.${SERVICE_ID}-main-web-router.service=${SERVICE_ID}-proxy-service"
         # HTTP Router (redirect to HTTPS)
         - "traefik.http.routers.${SERVICE_ID}-http-catchall.entrypoints=web"
         - "traefik.http.routers.${SERVICE_ID}-http-catchall.rule=host(`${DOMAIN}`)"
         - "traefik.http.routers.${SERVICE_ID}-http-catchall.priority=10"
         - "traefik.http.routers.${SERVICE_ID}-http-catchall.middlewares=${SERVICE_ID}-https-redirect"
+        - "traefik.http.routers.${SERVICE_ID}-http-catchall.service=${SERVICE_ID}-proxy-service"
 
     networks:
      - traefik 
