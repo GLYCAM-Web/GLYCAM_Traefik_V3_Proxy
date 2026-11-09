@@ -47,7 +47,7 @@ Otherwise, hit enter and the script will proceed.
         read answer
 fi
 
-for DIR in "logs" "ACCESS_LOGS" "acme" ; do
+for DIR in "logs" "ACCESS_LOGS" "acme" "logging/data/victorialogs" "logging/data/vector" "logging/data/grafana" ; do
 if [ ! -d "${DIR}" ] ; then
 	COMMAND="mkdir -p ${DIR}"
 	echo "The command to be run is:
@@ -62,10 +62,15 @@ if [ ! -d "${DIR}" ] ; then
 fi
 done
 
+LOGGING_COMPOSE_ARG="--compose-file docker-compose.logging.swarm.yml"
+if [ "${ENABLE_LOGGING_STACK:-YES}" = "NO" ] ; then
+	LOGGING_COMPOSE_ARG=""
+fi
 
 COMMAND="""
 docker stack deploy \
 	--compose-file docker-compose.traefik.swarm.yml \
+	${LOGGING_COMPOSE_ARG} \
 	traefik \
 	        2>> ${STDERR_FILE} \
         >> ${STDOUT_FILE}

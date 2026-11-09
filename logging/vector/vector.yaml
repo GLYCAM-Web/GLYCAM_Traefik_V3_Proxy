@@ -1,0 +1,42 @@
+data_dir: "/var/lib/vector"
+
+sources:
+  traefik_access_logs:
+    type: file
+    include:
+      - "/var/log/ACCESS_LOGS/access.log"
+    read_from: beginning
+    fingerprint:
+      strategy: device_and_inode
+
+transforms:
+  parse_traefik_json:
+    type: remap
+    inputs:
+      - traefik_access_logs
+    source: |
+      parsed, err = parse_json(.message)
+      if err == null && is_object(parsed) {
+        . = parsed
+        if !exists(.RequestPath) || .RequestPath == "" {
+          .RequestPath = to_string(.RequestAddr) ?? "-"
+        }
+      }
+
+sinks:
+  victorialogs:
+    type: http
+    inputs:
+      - parse_traefik_json
+    uri: "http://victorialogs:9428/insert/jsonline?_stream_fields=RequestHost,ServiceName&_time_field=StartUTC&_msg_field=RequestPath"
+    method: post
+    compression: gzip
+    encoding:
+      codec: json
+    framing:
+      method: newline_delimited
+    request:
+      headers:
+        Content-Type: "application/stream+json"
+    healthcheck:
+      enabled: false

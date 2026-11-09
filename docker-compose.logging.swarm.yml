@@ -1,0 +1,75 @@
+services:
+  victorialogs:
+    image: victoriametrics/victoria-logs:v1.15.0-victorialogs
+    command:
+      - -storageDataPath=/victoria-logs-data
+      - -retentionPeriod=100y
+      - -httpListenAddr=:9428
+    networks:
+      - proxy_net
+    ports:
+      - target: 9428
+        published: 9428
+        mode: host
+    volumes:
+      - ./logging/data/victorialogs:/victoria-logs-data
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.traefik == true
+
+  vector:
+    image: timberio/vector:0.42.0-alpine
+    command:
+      - --config
+      - /etc/vector/vector.yaml
+    networks:
+      - proxy_net
+    volumes:
+      - ./ACCESS_LOGS/:/var/log/ACCESS_LOGS/:ro
+      - ./logging/vector/vector.yaml:/etc/vector/vector.yaml:ro
+      - ./logging/data/vector:/var/lib/vector
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.labels.traefik == true
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    user: "0:0"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      - GF_INSTALL_PLUGINS=victoriametrics-logs-datasource
+      - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+    networks:
+      - proxy_net
+    ports:
+      - target: 3000
+        published: 3000
+        mode: host
+    volumes:
+      - ./logging/data/grafana:/var/lib/grafana
+      - ./logging/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./logging/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.traefik == true
+      labels:
+        # Uncomment below and set GRAFANA_HOST in config.bash to expose Grafana
+        # (and its Public Dashboards) via Traefik HTTPS:
+        # - "traefik.enable=true"
+        # - "traefik.swarm.network=traefik_proxy_net"
+        # - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_HOST:-stats.example.org}`)"
+        # - "traefik.http.routers.grafana.entrypoints=websecure"
+        # - "traefik.http.routers.grafana.tls=true"
+        # - "traefik.http.routers.grafana.tls.certresolver=le"
+        # - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+        - "traefik.enable=false"

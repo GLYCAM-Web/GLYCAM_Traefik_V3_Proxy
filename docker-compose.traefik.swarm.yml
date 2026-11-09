@@ -73,6 +73,24 @@ services:
       # If you want dynamic configs, add a directory something like this.
       #- ./dynamic_configs/:/etc/traefik/dynamic/ # Mount a local directory for dynamic files
 
+  traefik-logrotate:
+    image: docker:27-cli
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "0 0 1 * * /bin/sh /scripts/rotate-access-logs.sh" > /etc/crontabs/root
+        echo "traefik-logrotate started: scheduled monthly (0 0 1 * *)."
+        exec crond -f -l 2
+    volumes:
+      - ./ACCESS_LOGS/:/var/log/ACCESS_LOGS/
+      - ./logging/rotate-access-logs.sh:/scripts/rotate-access-logs.sh:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.labels.traefik == true
 
   whoami:
     image: traefik/whoami

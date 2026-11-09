@@ -24,7 +24,15 @@ bash start.sh
 
 - `docker-compose.traefik.swarm.yml`
 
-   YAML compose file used by Docker to deploy the Traefik Reverse Proxy in Swarm. 
+   YAML compose file used by Docker to deploy the Traefik Reverse Proxy and monthly access log rotator (`traefik-logrotate`) in Swarm. 
+
+- `docker-compose.logging.swarm.yml`
+
+   YAML compose file deploying the centralized logging and analytics stack (`VictoriaLogs`, `Vector`, and `Grafana`). Deployed automatically by `start.sh` unless `export ENABLE_LOGGING_STACK="NO"` is set in `config.bash`.
+
+- `logging/`
+
+   Contains scripts and configurations for monthly log rotation, splitting/backfilling existing large `access.log` files, `Vector` log shipping, and pre-provisioned `Grafana` AWStats-style and public dashboards. See `logging/README.md` for details.
 
 - `.gitignore`
 
@@ -62,7 +70,7 @@ bash start.sh
 
 - `config.bash`
 
-   Contains information needed at startup.
+   Contains information needed at startup (such as `LE_EMAIL`, and optionally `GRAFANA_ADMIN_PASSWORD`).
 
 ### Created at startup, if not already present
 
@@ -98,13 +106,15 @@ bash start.sh
 - `ACCESS_LOGS/`
 
     Logs of accesses from outside the swarm. Includes the name of the host requested.
-    Log rotation needs to be configured separately. This directory is created by start.sh.
+    Monthly log rotation (`access-YYYY-MM.log.gz`, kept forever) is handled automatically by the `traefik-logrotate` service, and live logs are shipped to `VictoriaLogs` + `Grafana` by `Vector`. This directory is created by `start.sh`.
 
     - `access.log`
 
-       The current access.log. The logs are verbose and can become large quickly. 
-       For production, implement log rotation or, better, deploy a cloud-based logs
-       management system. This log is created and maintained by Traefik.
+       The current month's active access.log created and maintained by Traefik.
+    - `access-YYYY-MM.log.gz`
+
+       Rotated monthly access log archives (compressed with gzip, retained indefinitely).
+       See `logging/README.md` for details on splitting/backfilling existing large `access.log` files and using Grafana.
 
 
 ## History and Inspirations
