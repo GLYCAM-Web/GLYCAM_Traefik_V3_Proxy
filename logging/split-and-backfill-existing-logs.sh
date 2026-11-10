@@ -77,13 +77,14 @@ echo "Step 2 complete. Monthly files created:"
 ls -lh "${LOG_DIR}"/access-[0-9][0-9][0-9][0-9]-[0-9][0-9].log 2>/dev/null || true
 
 if [[ "${DO_BACKFILL}" == "YES" ]]; then
-    echo "Step 3: Backfilling monthly files into VictoriaLogs (${VICTORIALOGS_URL})..."
+    echo "Step 3: Backfilling monthly files into VictoriaLogs over traefik_proxy_net..."
     for f in "${LOG_DIR}"/access-[0-9][0-9][0-9][0-9]-[0-9][0-9].log; do
         [[ -e "$f" ]] || continue
         echo "  Ingesting $f ..."
-        curl -sS -X POST "${VICTORIALOGS_URL}/insert/jsonline?_stream_fields=RequestHost,ServiceName&_time_field=StartUTC&_msg_field=RequestPath" \
+        docker run --rm -i --network traefik_proxy_net curlimages/curl:8.11.0 \
+            -sS -X POST "http://victorialogs:9428/insert/jsonline?_stream_fields=RequestHost,ServiceName&_time_field=StartUTC&_msg_field=RequestPath" \
             -H "Content-Type: application/stream+json" \
-            --data-binary @"$f"
+            --data-binary @- < "$f"
         echo "  Done ingesting $f."
     done
 fi

@@ -59,8 +59,7 @@ export GRAFANA_ADMIN_PASSWORD="your-strong-password"
   - Pre-provisioned under the **Traefik** folder with two dashboards:
     1. **GLYCAM Traefik Access Analytics (AWStats Overview)**: Full admin view with Total Requests, Unique Visitor IPs, Total Bandwidth, POST/Job Submissions, Traffic History by Host, Top Virtual Hosts, HTTP Status Codes, Top URLs, Top POST Endpoints, Top Client IPs, Top Referrers, Top User-Agents, and a live **Access Log Explorer & Investigation** panel.
     2. **GLYCAM Public Usage Statistics (Safe for Public Sharing)**: Aggregate usage metrics without raw IP addresses or raw logs, designed to be shared publicly.
-- **VictoriaLogs Built-in UI (VMUI)**: `http://<swarm-node>:9428/select/vmui/`
-  - Ultra-fast raw log search interface for ad-hoc investigations across years of data.
+- **VictoriaLogs Built-in UI (VMUI)**: Kept internal to `traefik_proxy_net` (not exposed on public interfaces). To access it from your workstation, use an SSH port-forward through a temporary container or inspect via Grafana.
 
 ---
 
@@ -72,9 +71,9 @@ VictoriaLogs indexes every JSON field produced by Traefik automatically. You can
   ```text
   RequestHost:glycam.org RequestPath:"/cb/" | stats count() as hits, count_uniq(ClientHost) as unique_users
   ```
-- **Count POST job submissions excluding internal IPs**:
+- **Count POST job submissions excluding internal/test IPs**:
   ```text
-  RequestMethod:POST -ClientHost:128.192.* | stats by (RequestPath) count() as jobs | sort by (jobs desc)
+  RequestMethod:POST -ClientHost:192.0.2.* | stats by (RequestPath) count() as jobs | sort by (jobs desc)
   ```
 - **Investigate everything a specific IP did**:
   ```text
@@ -87,14 +86,45 @@ VictoriaLogs indexes every JSON field produced by Traefik automatically. You can
 
 ---
 
-## 5. Securely Publishing Statistics Online for the Public
+## 5. Securely Publishing Statistics Online at `glycam.org/stats`
 
-Grafana's `publicDashboards` feature is enabled in `docker-compose.logging.swarm.yml`. To publish the privacy-safe summary dashboard online:
+Grafana natively supports running under a URL subpath (such as `https://glycam.org/stats`) via `GF_SERVER_SERVE_FROM_SUB_PATH=true`, which is now pre-configured in `docker-compose.logging.swarm.yml`.
 
-1. In `docker-compose.logging.swarm.yml`, uncomment the Traefik labels under `grafana` and set `GRAFANA_HOST` (e.g., `stats.glycam.org`) and `GRAFANA_ROOT_URL=https://stats.glycam.org` in `config.bash`.
-2. Open Grafana, navigate to **Dashboards -> Traefik -> GLYCAM Public Usage Statistics (Safe for Public Sharing)**.
-3. Click **Share** (top right) -> **Public Dashboard** tab -> enable **Make dashboard public**.
-4. Grafana generates a unique read-only public URL (`/public-dashboards/<token>`). Visitors with that link can view the charts for the configured time window, **cannot** edit queries, **cannot** view other dashboards, and **never** see visitor IP addresses or raw logs.
+### Step-by-Step Setup for `glycam.org/stats`
+
+1. **Configure `config.bash`**:
+   ```bash
+   export GRAFANA_HOST="glycam.org"
+   export GRAFANA_SUBPATH="/stats"
+   export GRAFANA_ROOT_URL="https://glycam.org/stats/"
+   ```
+2. **Enable Traefik Routing in `docker-compose.logging.swarm.yml`**:
+   Uncomment the Traefik labels on the `grafana` service (and comment out `traefik.enable=false`):
+   ```yaml
+   - "traefik.enable=true"
+   - "traefik.swarm.network=traefik_proxy_net"
+   - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_HOST:-glycam.org}`) && PathPrefix(`${GRAFANA_SUBPATH:-/stats}`)"
+   - "traefik.http.routers.grafana.priority=500"
+   - "traefik.http.routers.grafana.entrypoints=websecure"
+   - "traefik.http.routers.grafana.tls=true"
+   - "traefik.http.routers.grafana.tls.certresolver=le"
+   - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+   ```
+   *(Note: `priority=500` ensures `glycam.org/stats` matches before the main `glycam.org` website router. Look at `Examples/docker-compose.proxy.swarm.traefik.ratelimits.yml` to make sure `500` is higher than your main website router's priority.)*
+3. **Publish the Public Dashboard**:
+   - Open Grafana (on LAN at `http://<swarm-node>:3000/stats/`), go to **Dashboards -> Traefik -> GLYCAM Public Usage Statistics (Safe for Public Sharing)**.
+   - Click **Share** (top right) -> **Public Dashboard** tab -> enable **Make dashboard public**.
+   - Grafana will provide a public link: `https://glycam.org/stats/public-dashboards/<token>`.
+
+### Optional: Lock Down `/stats` So Only the Public Dashboard Is Externally Reachable
+
+If you want external visitors on `glycam.org/stats` to **only** be able to load the public dashboard (while keeping the Grafana login page `/stats/login` and admin UI reachable only on your internal LAN via `:3000`), use this router rule instead:
+
+```yaml
+- "traefik.http.routers.grafana.rule=Host(`glycam.org`) && (PathPrefix(`/stats/public-dashboards`) || PathPrefix(`/stats/api/public`) || PathPrefix(`/stats/public/`))"
+```
+
+With that rule, Grafana's login page and admin API aren't even exposed to the public internet—only the read-only public dashboard and its static frontend assets are routed through Traefik.
 
 ---
 

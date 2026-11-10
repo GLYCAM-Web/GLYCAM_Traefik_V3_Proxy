@@ -7,10 +7,8 @@ services:
       - -httpListenAddr=:9428
     networks:
       - proxy_net
-    ports:
-      - target: 9428
-        published: 9428
-        mode: host
+    # Port 9428 is kept internal to proxy_net so VictoriaLogs is never exposed
+    # on public interfaces. Access VMUI via SSH tunnel or docker exec if needed.
     volumes:
       - ./logging/data/victorialogs:/victoria-logs-data
     deploy:
@@ -42,10 +40,11 @@ services:
     user: "0:0"
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?ERROR_Set_GRAFANA_ADMIN_PASSWORD_in_config.bash}
       - GF_INSTALL_PLUGINS=victoriametrics-logs-datasource
       - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
-      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000/stats/}
+      - GF_SERVER_SERVE_FROM_SUB_PATH=${GRAFANA_SERVE_FROM_SUB_PATH:-true}
     networks:
       - proxy_net
     ports:
@@ -63,11 +62,13 @@ services:
         constraints:
           - node.labels.traefik == true
       labels:
-        # Uncomment below and set GRAFANA_HOST in config.bash to expose Grafana
-        # (and its Public Dashboards) via Traefik HTTPS:
+        # Uncomment below and set GRAFANA_HOST / GRAFANA_SUBPATH in config.bash
+        # to expose ONLY Grafana Public Dashboards at https://<host>/stats via Traefik HTTPS
+        # (keeping /stats/login and admin APIs off the public internet):
         # - "traefik.enable=true"
         # - "traefik.swarm.network=traefik_proxy_net"
-        # - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_HOST:-stats.example.org}`)"
+        # - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_HOST:-example.org}`) && (PathPrefix(`${GRAFANA_SUBPATH:-/stats}/public-dashboards`) || PathPrefix(`${GRAFANA_SUBPATH:-/stats}/api/public`) || PathPrefix(`${GRAFANA_SUBPATH:-/stats}/public/`))"
+        # - "traefik.http.routers.grafana.priority=500"
         # - "traefik.http.routers.grafana.entrypoints=websecure"
         # - "traefik.http.routers.grafana.tls=true"
         # - "traefik.http.routers.grafana.tls.certresolver=le"

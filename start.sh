@@ -65,6 +65,11 @@ done
 LOGGING_COMPOSE_ARG="--compose-file docker-compose.logging.swarm.yml"
 if [ "${ENABLE_LOGGING_STACK:-YES}" = "NO" ] ; then
 	LOGGING_COMPOSE_ARG=""
+elif [ -z "${GRAFANA_ADMIN_PASSWORD:-}" ] ; then
+	echo "ERROR: GRAFANA_ADMIN_PASSWORD is not set in config.bash."
+	echo "Please add: export GRAFANA_ADMIN_PASSWORD='your-strong-password' to config.bash"
+	echo "(or set export ENABLE_LOGGING_STACK='NO' to disable Grafana/VictoriaLogs)."
+	exit 1
 fi
 
 COMMAND="""
