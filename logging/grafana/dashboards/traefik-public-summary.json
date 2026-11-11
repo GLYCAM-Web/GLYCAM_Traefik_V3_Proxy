@@ -44,7 +44,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "* | stats count() as total_requests",
+          "expr": "RequestHost:$host $bot_filter | stats count() as total_requests",
           "queryType": "stats",
           "refId": "A"
         }
@@ -88,7 +88,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "* | stats count_uniq(ClientHost) as unique_visitors",
+          "expr": "RequestHost:$host $bot_filter | stats count_uniq(ClientHost) as unique_visitors",
           "queryType": "stats",
           "refId": "A"
         }
@@ -132,7 +132,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "* | stats sum(DownstreamContentSize) as total_bytes",
+          "expr": "RequestHost:$host $bot_filter | stats sum(DownstreamContentSize) as total_bytes",
           "queryType": "stats",
           "refId": "A"
         }
@@ -176,13 +176,126 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestMethod:POST | stats count() as post_requests",
+          "expr": "RequestHost:$host $bot_filter RequestMethod:POST | stats count() as post_requests",
           "queryType": "stats",
           "refId": "A"
         }
       ],
       "title": "Job / API Submissions (POST)",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "victorialogs"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-magenta"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#ffcbff", "value": null },
+              { "color": "#ffabff", "value": 100 },
+              { "color": "#ff7dff", "value": 500 },
+              { "color": "#ff00ff", "value": 2000 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 4 },
+      "id": 8,
+      "options": {
+        "basemap": {
+          "config": {},
+          "name": "World Map",
+          "type": "default"
+        },
+        "controls": {
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showDebug": false,
+          "showMeasure": false,
+          "showScale": true,
+          "showZoom": true
+        },
+        "layers": [
+          {
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "field": "hits",
+                  "fixed": "#ff00ff"
+                },
+                "opacity": 0.85,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": -360,
+                  "mode": "mod"
+                },
+                "size": {
+                  "field": "hits",
+                  "fixed": 5,
+                  "max": 22,
+                  "min": 3
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "latitude": "geo_lat_bin",
+              "longitude": "geo_lon_bin",
+              "mode": "coords"
+            },
+            "name": "1x1 Degree Binned Accesses (>= $min_hits hits)",
+            "tooltip": true,
+            "type": "markers"
+          }
+        ],
+        "tooltip": {
+          "mode": "details"
+        },
+        "view": {
+          "allLayers": true,
+          "id": "zero",
+          "lat": 20,
+          "lon": 0,
+          "zoom": 1.8
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "victorialogs"
+          },
+          "expr": "RequestHost:$host $bot_filter geo_lat_bin:* geo_lon_bin:* | stats by (geo_lat_bin, geo_lon_bin) count() as hits, count_uniq(ClientHost) as visitors | filter hits:>=$min_hits | sort by (hits desc)",
+          "queryType": "stats",
+          "refId": "A"
+        }
+      ],
+      "title": "World Access Map (1x1 Degree Bins, Min $min_hits Hits, Bot/Internal Filtered)",
+      "type": "geomap"
     },
     {
       "datasource": {
@@ -201,7 +314,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 4 },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 16 },
       "id": 5,
       "targets": [
         {
@@ -209,12 +322,12 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "* | stats by (RequestHost) count() as requests",
+          "expr": "RequestHost:$host $bot_filter | stats by (RequestHost) count() as requests",
           "queryType": "statsRange",
           "refId": "A"
         }
       ],
-      "title": "GLYCAM Traffic Over Time",
+      "title": "GLYCAM Traffic Over Time ($host)",
       "type": "timeseries"
     },
     {
@@ -222,7 +335,7 @@
         "type": "victoriametrics-logs-datasource",
         "uid": "victorialogs"
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 13 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 25 },
       "id": 6,
       "targets": [
         {
@@ -230,12 +343,12 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "* | stats by (RequestHost) count() as hits, count_uniq(ClientHost) as unique_visitors, sum(DownstreamContentSize) as bandwidth_bytes | sort by (hits desc) | limit 20",
+          "expr": "RequestHost:$host $bot_filter | stats by (RequestPath, RequestMethod) count() as hits, count_uniq(ClientHost) as unique_visitors, sum(DownstreamContentSize) as bandwidth_bytes | sort by (hits desc) | limit 20",
           "queryType": "stats",
           "refId": "A"
         }
       ],
-      "title": "Traffic by Service / Host",
+      "title": "Top Pages / Paths ($host)",
       "type": "table"
     },
     {
@@ -243,7 +356,7 @@
         "type": "victoriametrics-logs-datasource",
         "uid": "victorialogs"
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 13 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 25 },
       "id": 7,
       "targets": [
         {
@@ -251,17 +364,71 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestMethod:POST | stats by (RequestHost, RequestPath) count() as submissions, count_uniq(ClientHost) as unique_users | sort by (submissions desc) | limit 20",
+          "expr": "RequestHost:$host $bot_filter RequestMethod:POST | stats by (RequestHost, RequestPath) count() as submissions, count_uniq(ClientHost) as unique_users | sort by (submissions desc) | limit 20",
           "queryType": "stats",
           "refId": "A"
         }
       ],
-      "title": "Top Modeling / API Endpoints Used",
+      "title": "Top Modeling / API Endpoints Used ($host)",
       "type": "table"
     }
   ],
   "refresh": "5m",
   "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "*", "value": "*" },
+        "description": "Filter by website RequestHost (e.g. glycam.org, test.glycam.org, dev.glycam.org, or *)",
+        "label": "Website Host",
+        "name": "host",
+        "options": [{ "selected": true, "text": "*", "value": "*" }],
+        "query": "*",
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "Filtered (Exclude Bots & Internal IPs)",
+          "value": "-is_bot:true -is_internal:true -request_User-Agent:~\"(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|perplexity|amazonbot|applebot|facebookexternalhit|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|headlesschrome|uptimerobot|pingdom)\" -ClientHost:(127.0.0.0/8 or 10.0.0.0/8 or 172.16.0.0/12 or 192.168.0.0/16)"
+        },
+        "description": "Toggle bot/crawler and internal IP filtering",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Traffic Filter",
+        "multi": false,
+        "name": "bot_filter",
+        "options": [
+          {
+            "selected": true,
+            "text": "Filtered (Exclude Bots & Internal IPs)",
+            "value": "-is_bot:true -is_internal:true -request_User-Agent:~\"(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|perplexity|amazonbot|applebot|facebookexternalhit|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|headlesschrome|uptimerobot|pingdom)\" -ClientHost:(127.0.0.0/8 or 10.0.0.0/8 or 172.16.0.0/12 or 192.168.0.0/16)"
+          },
+          {
+            "selected": false,
+            "text": "Unfiltered (All Raw Traffic)",
+            "value": "*"
+          },
+          {
+            "selected": false,
+            "text": "Bots & Scanners Only",
+            "value": "(is_bot:true or request_User-Agent:~\"(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|perplexity|amazonbot|applebot|facebookexternalhit|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|headlesschrome|uptimerobot|pingdom)\")"
+          }
+        ],
+        "query": "Filtered (Exclude Bots & Internal IPs) : -is_bot:true -is_internal:true -request_User-Agent:~\"(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|perplexity|amazonbot|applebot|facebookexternalhit|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|headlesschrome|uptimerobot|pingdom)\" -ClientHost:(127.0.0.0/8 or 10.0.0.0/8 or 172.16.0.0/12 or 192.168.0.0/16),Unfiltered (All Raw Traffic) : *,Bots & Scanners Only : (is_bot:true or request_User-Agent:~\"(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|perplexity|amazonbot|applebot|facebookexternalhit|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|headlesschrome|uptimerobot|pingdom)\")",
+        "type": "custom"
+      },
+      {
+        "current": { "selected": false, "text": "10", "value": "10" },
+        "description": "Minimum hits per 1x1 degree lat/lon bin to plot on World Map",
+        "label": "Min Map Hits",
+        "name": "min_hits",
+        "options": [{ "selected": true, "text": "10", "value": "10" }],
+        "query": "10",
+        "type": "textbox"
+      }
+    ]
+  },
   "time": {
     "from": "now-1y",
     "to": "now"
@@ -269,5 +436,5 @@
   "timezone": "browser",
   "title": "GLYCAM Public Usage Statistics (Safe for Public Sharing)",
   "uid": "glycam-traefik-public-stats",
-  "version": 1
+  "version": 3
 }

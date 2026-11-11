@@ -3,14 +3,15 @@
 USAGE="""
 USAGE:
 
-        bash start.sh
+        bash stop.sh
 
         See README.md for more information.
 """
 
 DATE="$( date +%Y-%m-%d-%H-%M-%S )"
-STDOUT_FILE="./logs/start_STDOUT_${DATE}.log"
-STDERR_FILE="./logs/start_STDERR_${DATE}.log"
+mkdir -p ./logs
+STDOUT_FILE="./logs/stop_STDOUT_${DATE}.log"
+STDERR_FILE="./logs/stop_STDERR_${DATE}.log"
 
 COMMAND="""
 docker stack rm \
@@ -18,13 +19,14 @@ docker stack rm \
         2>> ${STDERR_FILE} \
         >> ${STDOUT_FILE}
 """
-#COMMAND="docker --version"  # uncomment to test workflows when TEST is not YES
 echo "The command to be run is:
-${COMMAND}" 
+${COMMAND}"
 if [ "${TEST}" != "YES" ] ; then
-	eval ${COMMAND} | tee ${STDOUT_FILE}
+	docker stack rm traefik >> "${STDOUT_FILE}" 2>> "${STDERR_FILE}"
 	result="$?"
+	cat "${STDOUT_FILE}"
 	if [ "${result}" != "0" ] ; then
-		echo "Something went wrong with the previous command. Exiting." | tee ${STDERR_FILE}
+		echo "Something went wrong with the previous command. Exiting." | tee -a "${STDERR_FILE}"
+		exit "${result}"
 	fi
 fi

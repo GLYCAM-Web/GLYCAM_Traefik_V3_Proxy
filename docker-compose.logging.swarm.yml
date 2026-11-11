@@ -20,14 +20,19 @@ services:
 
   vector:
     image: timberio/vector:0.42.0-alpine
-    command:
-      - --config
-      - /etc/vector/vector.yaml
+    entrypoint:
+      - /bin/sh
+      - /etc/vector/entrypoint.sh
+    environment:
+      - INTERNAL_IP_CIDRS=${INTERNAL_IP_CIDRS:-}
     networks:
       - proxy_net
     volumes:
       - ./ACCESS_LOGS/:/var/log/ACCESS_LOGS/:ro
       - ./logging/vector/vector.yaml:/etc/vector/vector.yaml:ro
+      - ./logging/vector/entrypoint.sh:/etc/vector/entrypoint.sh:ro
+      - ./logging/geoip/:/etc/vector/geoip/:ro
+      - ./logging/:/etc/logging-config/:ro
       - ./logging/data/vector:/var/lib/vector
     deploy:
       mode: global
@@ -38,13 +43,25 @@ services:
   grafana:
     image: grafana/grafana:11.5.2
     user: "0:0"
+    entrypoint:
+      - /bin/sh
+      - /etc/logging-config/grafana/entrypoint.sh
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?ERROR_Set_GRAFANA_ADMIN_PASSWORD_in_config.bash}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_ALLOW_ORG_CREATE=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SECURITY_DISABLE_GRAVATAR=true
+      - GF_SECURITY_COOKIE_SAMESITE=lax
+      - GF_SECURITY_COOKIE_SECURE=${GRAFANA_COOKIE_SECURE:-false}
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
       - GF_INSTALL_PLUGINS=victoriametrics-logs-datasource
       - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000/stats/}
       - GF_SERVER_SERVE_FROM_SUB_PATH=${GRAFANA_SERVE_FROM_SUB_PATH:-true}
+      - INTERNAL_IP_CIDRS=${INTERNAL_IP_CIDRS:-}
     networks:
       - proxy_net
     ports:
@@ -54,7 +71,8 @@ services:
     volumes:
       - ./logging/data/grafana:/var/lib/grafana
       - ./logging/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./logging/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./logging/grafana/dashboards:/var/lib/grafana/dashboards-src:ro
+      - ./logging/:/etc/logging-config/:ro
     deploy:
       mode: replicated
       replicas: 1

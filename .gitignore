@@ -10,3 +10,7 @@ ACCESS_LOGS
 acme
 config.bash
 logging/data
+logging/geoip/*.mmdb
+logging/internal_ips.local.conf
+*.local.conf
+

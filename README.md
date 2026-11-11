@@ -4,27 +4,32 @@ This is the git repository for the GLYCAM Traefik V3 Reverse Proxy.
 
 ## Quick Start
 
-```
+```bash
 git clone https://github.com/GLYCAM-Web/GLYCAM_Traefik_V3_Proxy.git
 
 cd GLYCAM_Traefik_V3_Proxy
 
-echo "export LE_EMAIL='insert-your@email.address'" > config.bash
+cp config.bash.example config.bash
+chmod 600 config.bash
+# Edit config.bash to set LE_EMAIL and GRAFANA_ADMIN_PASSWORD
 
 ## Optionally, if you want to do a dry run:
 export TEST="YES"
 
 bash start.sh
-
 ```
 
 ## Files and Directories List
 
 ### Contained herein
 
+- `config.bash.example`
+
+   Template for creating your local (git-ignored) `config.bash` with `LE_EMAIL`, `GRAFANA_ADMIN_PASSWORD`, and optional security/network settings (`TRAEFIK_API_INSECURE`, `TRUSTED_PROXIES`, `INTERNAL_IP_CIDRS`).
+
 - `docker-compose.traefik.swarm.yml`
 
-   YAML compose file used by Docker to deploy the Traefik Reverse Proxy and monthly access log rotator (`traefik-logrotate`) in Swarm. 
+   YAML compose file used by Docker to deploy the Traefik Reverse Proxy and monthly access log rotator (`traefik-logrotate`) in Swarm.
 
 - `docker-compose.logging.swarm.yml`
 
@@ -32,7 +37,7 @@ bash start.sh
 
 - `logging/`
 
-   Contains scripts and configurations for monthly log rotation, splitting/backfilling existing large `access.log` files, `Vector` log shipping, and pre-provisioned `Grafana` AWStats-style and public dashboards. See `logging/README.md` for details.
+   Contains scripts and configurations for monthly log rotation, splitting/backfilling existing large `access.log` files, `Vector` log shipping, pre-provisioned `Grafana` AWStats-style and public dashboards, and `logging/internal_ips.example.conf` (template for git-ignored `logging/internal_ips.local.conf`). See `logging/README.md` for details.
 
 - `.gitignore`
 
@@ -54,7 +59,7 @@ bash start.sh
 - `test-whoami.sh`
 
    A mechanism for testing the traefik installation.
-   Note: we have made no attempt for it to work except as a local curl/wget.
+   Note: restricted to localhost / RFC1918 private networks via Traefik `ipallowlist` middleware.
 
 - `Examples/`
 
@@ -66,11 +71,15 @@ bash start.sh
 
     - `README.md`
 
-### You must create
+### You must create (git-ignored)
 
 - `config.bash`
 
-   Contains information needed at startup (such as `LE_EMAIL`, and optionally `GRAFANA_ADMIN_PASSWORD`).
+   Copy from `config.bash.example` (`chmod 600 config.bash`). Contains information needed at startup (`LE_EMAIL`, `GRAFANA_ADMIN_PASSWORD`, etc.).
+
+- `logging/internal_ips.local.conf` *(optional)*
+
+   Copy from `logging/internal_ips.example.conf` (created automatically by `start.sh` if absent). List internal lab routers, team static IPs, or VPN CIDRs (one per line) to exclude internal traffic from public usage statistics without committing private IP addresses to git.
 
 ### Created at startup, if not already present
 

@@ -7,9 +7,13 @@ services:
       # HTTP and HTTPS
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
-      - --entrypoints.websecure.forwardedHeaders.insecure=true
-      - --entrypoints.web.forwardedHeaders.insecure=true
-      # Docker swarm 
+      # Trust X-Forwarded-* headers only from RFC1918 internal networks by default
+      # (override via TRUSTED_PROXIES in config.bash if behind an upstream proxy).
+      # Never use forwardedHeaders.insecure=true on an internet-facing proxy, as it
+      # allows external clients to spoof X-Forwarded-For and bypass rate limits.
+      - --entrypoints.websecure.forwardedHeaders.trustedIPs=${TRUSTED_PROXIES:-127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      - --entrypoints.web.forwardedHeaders.trustedIPs=${TRUSTED_PROXIES:-127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      # Docker swarm
       - --providers.swarm.endpoint=unix:///var/run/docker.sock # Or tcp://<host>:<port>
       - --providers.swarm.network=traefik_proxy_net
       - --providers.swarm.exposedbydefault=false
@@ -18,28 +22,34 @@ services:
       #    Use the following for staging:
       # - --certificatesresolvers.le.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory
       #    Use the following for normal access:
-      - --certificatesresolvers.le.acme.caserver=https://acme-v02.api.letsencrypt.org/directory      
+      - --certificatesresolvers.le.acme.caserver=https://acme-v02.api.letsencrypt.org/directory
       - --certificatesresolvers.le.acme.storage=/etc/traefik/acme/acme.json
       - --certificatesresolvers.le.acme.httpChallenge=true
       - --certificatesresolvers.le.acme.httpChallenge.entryPoint=web
       # Dashboard
-      #    This allows the dashboard to be shown in the LAN (but not elsewhere)
-      - --api.insecure=true
+      #    Disabled by default for security. Set export TRAEFIK_API_INSECURE="true"
+      #    in config.bash ONLY on firewalled LAN hosts if you need port 8080 access.
+      - --api.insecure=${TRAEFIK_API_INSECURE:-false}
       # Logging Setup
       - --log.level=ERROR
       - --log.filePath=/log/traefik.log
       - --log.format=json
       - --log.compress=true
-      #  Allow access logs
+      # Allow access logs (keep User-Agent & Referer for analytics, redact secrets/cookies)
       - --accesslog=true
       - --accesslog.filePath=/var/log/ACCESS_LOGS/access.log
       - --accesslog.format=json
       - --accesslog.fields.headers.defaultMode=keep
+      - --accesslog.fields.headers.names.Authorization=redact
+      - --accesslog.fields.headers.names.Cookie=redact
+      - --accesslog.fields.headers.names.Set-Cookie=redact
+      - --accesslog.fields.headers.names.X-Auth-Token=redact
+      - --accesslog.fields.headers.names.X-Api-Key=redact
+      - --accesslog.fields.headers.names.Proxy-Authorization=redact
       # Uncomment to add a place for dynamic files to be stored and read - see 'Volumes', below.
       #- --providers.file=true
       #- --providers.file.directory=/etc/traefik/dynamic/
       #- --providers.file.watch=true
-
 
     deploy:
       mode: global
@@ -47,7 +57,7 @@ services:
         constraints:
           - node.labels.traefik == true
       labels:
-        - "traefik.enable=true"
+        - "traefik.enable=false"
         - "traefik.swarm.network=traefik_proxy_net"
         - "traefik.http.services.traefik-reverse-proxy.loadbalancer.server.port=8080"
 
@@ -61,10 +71,7 @@ services:
       - target: 8080
         published: 8080
         mode: host
-      - target: 9797
-        published: 9797
-        mode: host
-        
+
     volumes:
       - ./acme/:/etc/traefik/acme/
       - ./logs/:/log/
@@ -97,14 +104,17 @@ services:
     networks:
       - proxy_net
     deploy:
-      replicas: 3
+      replicas: 1
       labels:
-        - "traefik.enable=true"
+        - "traefik.enable=${ENABLE_WHOAMI:-true}"
         - "traefik.swarm.network=traefik_proxy_net"
+        # Restrict whoami diagnostic endpoint to localhost / RFC1918 private networks
+        - "traefik.http.middlewares.whoami-local-only.ipallowlist.sourcerange=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
         - "traefik.http.routers.whoami.rule=Host(`traefik-whoami.swarm`)"
+        - "traefik.http.routers.whoami.middlewares=whoami-local-only@swarm"
         - "traefik.http.services.whoami.loadbalancer.server.port=80"
-        - "traefik.http.routers.whoami.entrypoints=websecure"
-        - "traefik.http.routers.whoami.tls=true"
+        - "traefik.http.routers.whoami.entrypoints=web"
+
 networks:
   proxy_net:
     name: "traefik_proxy_net"

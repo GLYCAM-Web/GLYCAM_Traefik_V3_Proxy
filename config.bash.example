@@ -1,0 +1,42 @@
+# ==============================================================================
+# GLYCAM Traefik V3 Proxy & Logging Stack — Local Configuration Template
+# ==============================================================================
+# Copy this file to config.bash and customize for your deployment:
+#   cp config.bash.example config.bash
+#   chmod 600 config.bash
+#
+# IMPORTANT: config.bash is git-ignored. Never commit real passwords or private
+# network details to git-tracked files.
+# ==============================================================================
+
+# 1. Let's Encrypt ACME Registration Email (Required)
+export LE_EMAIL="insert-your@email.address"
+
+# 2. Centralized Logging Stack (VictoriaLogs + Vector + Grafana)
+# Set to "NO" to deploy only Traefik and log rotation without Grafana/VictoriaLogs.
+export ENABLE_LOGGING_STACK="YES"
+
+# 3. Grafana Administrator Credentials (Required when ENABLE_LOGGING_STACK="YES")
+export GRAFANA_ADMIN_USER="admin"
+export GRAFANA_ADMIN_PASSWORD="change-me-to-a-strong-password"
+
+# 4. Optional: Grafana Subpath / Public URL Settings
+# export GRAFANA_HOST="example.org"
+# export GRAFANA_SUBPATH="/stats"
+# export GRAFANA_ROOT_URL="http://localhost:3000/stats/"
+# export GRAFANA_COOKIE_SECURE="false"
+
+# 5. Optional: Internal / Team IP CIDRs to Exclude from Public Usage Statistics
+# You can list comma-separated CIDRs here OR place one IP/CIDR per line in
+# logging/internal_ips.local.conf (also git-ignored).
+# Example using RFC 5737 documentation subnets:
+# export INTERNAL_IP_CIDRS="192.0.2.0/24,198.51.100.10/32"
+
+# 6. Optional: Traefik Security Overrides
+# By default, Traefik trusts X-Forwarded-* headers only from RFC1918 private networks.
+# If running behind an upstream load balancer, specify its CIDRs here:
+# export TRUSTED_PROXIES="127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
+# By default, the unauthenticated Traefik API/Dashboard on port 8080 is disabled ("false").
+# Set to "true" ONLY on firewalled internal LAN hosts if you need port 8080 dashboard access:
+export TRAEFIK_API_INSECURE="false"

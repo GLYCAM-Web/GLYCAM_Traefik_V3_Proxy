@@ -45,7 +45,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host | stats count() as total_requests",
+          "expr": "RequestHost:$host $bot_filter | stats count() as total_requests",
           "queryType": "stats",
           "refId": "A"
         }
@@ -89,7 +89,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host | stats count_uniq(ClientHost) as unique_visitors",
+          "expr": "RequestHost:$host $bot_filter | stats count_uniq(ClientHost) as unique_visitors",
           "queryType": "stats",
           "refId": "A"
         }
@@ -133,7 +133,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host | stats sum(DownstreamContentSize) as total_bytes",
+          "expr": "RequestHost:$host $bot_filter | stats sum(DownstreamContentSize) as total_bytes",
           "queryType": "stats",
           "refId": "A"
         }
@@ -177,13 +177,126 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host RequestMethod:POST | stats count() as post_requests",
+          "expr": "RequestHost:$host $bot_filter RequestMethod:POST | stats count() as post_requests",
           "queryType": "stats",
           "refId": "A"
         }
       ],
       "title": "POST Requests (Job / API Submissions)",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "victorialogs"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-magenta"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#ffcbff", "value": null },
+              { "color": "#ffabff", "value": 100 },
+              { "color": "#ff7dff", "value": 500 },
+              { "color": "#ff00ff", "value": 2000 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 4 },
+      "id": 14,
+      "options": {
+        "basemap": {
+          "config": {},
+          "name": "World Map",
+          "type": "default"
+        },
+        "controls": {
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showDebug": false,
+          "showMeasure": false,
+          "showScale": true,
+          "showZoom": true
+        },
+        "layers": [
+          {
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "field": "hits",
+                  "fixed": "#ff00ff"
+                },
+                "opacity": 0.85,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": -360,
+                  "mode": "mod"
+                },
+                "size": {
+                  "field": "hits",
+                  "fixed": 5,
+                  "max": 22,
+                  "min": 3
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "latitude": "geo_lat_bin",
+              "longitude": "geo_lon_bin",
+              "mode": "coords"
+            },
+            "name": "1x1 Degree Binned Accesses (>= $min_hits hits)",
+            "tooltip": true,
+            "type": "markers"
+          }
+        ],
+        "tooltip": {
+          "mode": "details"
+        },
+        "view": {
+          "allLayers": true,
+          "id": "zero",
+          "lat": 20,
+          "lon": 0,
+          "zoom": 1.8
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "victorialogs"
+          },
+          "expr": "RequestHost:$host $bot_filter geo_lat_bin:* geo_lon_bin:* | stats by (geo_lat_bin, geo_lon_bin) count() as hits, count_uniq(ClientHost) as visitors | filter hits:>=$min_hits | sort by (hits desc)",
+          "queryType": "stats",
+          "refId": "A"
+        }
+      ],
+      "title": "World Access Map (1x1 Degree Bins, Min $min_hits Hits)",
+      "type": "geomap"
     },
     {
       "datasource": {
@@ -202,7 +315,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
       "id": 5,
       "targets": [
         {
@@ -210,7 +323,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host | stats by (RequestHost) count() as requests",
+          "expr": "RequestHost:$host $bot_filter | stats by (RequestHost) count() as requests",
           "queryType": "statsRange",
           "refId": "A"
         }
@@ -223,7 +336,7 @@
         "type": "victoriametrics-logs-datasource",
         "uid": "victorialogs"
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
       "id": 6,
       "targets": [
         {
@@ -231,7 +344,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host | stats by (RequestHost) count() as hits, count_uniq(ClientHost) as unique_visitors, sum(DownstreamContentSize) as bandwidth_bytes | sort by (hits desc) | limit 25",
+          "expr": "RequestHost:$host $bot_filter | stats by (RequestHost) count() as hits, count_uniq(ClientHost) as unique_visitors, sum(DownstreamContentSize) as bandwidth_bytes | sort by (hits desc) | limit 25",
           "queryType": "stats",
           "refId": "A"
         }
@@ -244,7 +357,7 @@
         "type": "victoriametrics-logs-datasource",
         "uid": "victorialogs"
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
       "id": 7,
       "targets": [
         {
@@ -252,7 +365,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host | stats by (DownstreamStatus) count() as hits, sum(DownstreamContentSize) as bandwidth_bytes | sort by (hits desc)",
+          "expr": "RequestHost:$host $bot_filter | stats by (DownstreamStatus) count() as hits, sum(DownstreamContentSize) as bandwidth_bytes | sort by (hits desc)",
           "queryType": "stats",
           "refId": "A"
         }
@@ -265,7 +378,7 @@
         "type": "victoriametrics-logs-datasource",
         "uid": "victorialogs"
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 20 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 32 },
       "id": 8,
       "targets": [
         {
@@ -273,7 +386,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host | stats by (RequestPath, RequestMethod) count() as hits, count_uniq(ClientHost) as unique_visitors, sum(DownstreamContentSize) as bandwidth_bytes | sort by (hits desc) | limit 30",
+          "expr": "RequestHost:$host $bot_filter | stats by (RequestPath, RequestMethod) count() as hits, count_uniq(ClientHost) as unique_visitors, sum(DownstreamContentSize) as bandwidth_bytes | sort by (hits desc) | limit 30",
           "queryType": "stats",
           "refId": "A"
         }
@@ -286,7 +399,7 @@
         "type": "victoriametrics-logs-datasource",
         "uid": "victorialogs"
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 20 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 32 },
       "id": 9,
       "targets": [
         {
@@ -294,7 +407,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host RequestMethod:POST | stats by (RequestHost, RequestPath) count() as submissions, count_uniq(ClientHost) as unique_users | sort by (submissions desc) | limit 30",
+          "expr": "RequestHost:$host $bot_filter RequestMethod:POST | stats by (RequestHost, RequestPath) count() as submissions, count_uniq(ClientHost) as unique_users | sort by (submissions desc) | limit 30",
           "queryType": "stats",
           "refId": "A"
         }
@@ -307,7 +420,7 @@
         "type": "victoriametrics-logs-datasource",
         "uid": "victorialogs"
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 29 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 41 },
       "id": 10,
       "targets": [
         {
@@ -315,7 +428,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host | stats by (ClientHost) count() as hits, sum(DownstreamContentSize) as bandwidth_bytes | sort by (hits desc) | limit 25",
+          "expr": "RequestHost:$host $bot_filter | stats by (ClientHost) count() as hits, sum(DownstreamContentSize) as bandwidth_bytes | sort by (hits desc) | limit 25",
           "queryType": "stats",
           "refId": "A"
         }
@@ -328,7 +441,7 @@
         "type": "victoriametrics-logs-datasource",
         "uid": "victorialogs"
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 29 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 41 },
       "id": 11,
       "targets": [
         {
@@ -336,7 +449,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host request_Referer:* | stats by (request_Referer) count() as hits | sort by (hits desc) | limit 25",
+          "expr": "RequestHost:$host $bot_filter request_Referer:* | stats by (request_Referer) count() as hits | sort by (hits desc) | limit 25",
           "queryType": "stats",
           "refId": "A"
         }
@@ -349,7 +462,7 @@
         "type": "victoriametrics-logs-datasource",
         "uid": "victorialogs"
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 29 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 41 },
       "id": 12,
       "targets": [
         {
@@ -357,7 +470,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host request_User-Agent:* | stats by (request_User-Agent) count() as hits | sort by (hits desc) | limit 25",
+          "expr": "RequestHost:$host $bot_filter request_User-Agent:* | stats by (request_User-Agent) count() as hits | sort by (hits desc) | limit 25",
           "queryType": "stats",
           "refId": "A"
         }
@@ -370,7 +483,7 @@
         "type": "victoriametrics-logs-datasource",
         "uid": "victorialogs"
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 37 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 49 },
       "id": 13,
       "options": {
         "dedupStrategy": "none",
@@ -388,7 +501,7 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "victorialogs"
           },
-          "expr": "RequestHost:$host $search",
+          "expr": "RequestHost:$host $bot_filter $search",
           "refId": "A"
         }
       ],
@@ -410,6 +523,47 @@
         "type": "textbox"
       },
       {
+        "current": {
+          "selected": true,
+          "text": "Filtered (Exclude Bots & Internal IPs)",
+          "value": "-is_bot:true -is_internal:true -request_User-Agent:~\"(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|perplexity|amazonbot|applebot|facebookexternalhit|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|headlesschrome|uptimerobot|pingdom)\" -ClientHost:(127.0.0.0/8 or 10.0.0.0/8 or 172.16.0.0/12 or 192.168.0.0/16)"
+        },
+        "description": "Toggle bot/crawler and internal IP filtering",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Traffic Filter",
+        "multi": false,
+        "name": "bot_filter",
+        "options": [
+          {
+            "selected": true,
+            "text": "Filtered (Exclude Bots & Internal IPs)",
+            "value": "-is_bot:true -is_internal:true -request_User-Agent:~\"(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|perplexity|amazonbot|applebot|facebookexternalhit|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|headlesschrome|uptimerobot|pingdom)\" -ClientHost:(127.0.0.0/8 or 10.0.0.0/8 or 172.16.0.0/12 or 192.168.0.0/16)"
+          },
+          {
+            "selected": false,
+            "text": "Unfiltered (All Raw Traffic)",
+            "value": "*"
+          },
+          {
+            "selected": false,
+            "text": "Bots & Scanners Only",
+            "value": "(is_bot:true or request_User-Agent:~\"(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|perplexity|amazonbot|applebot|facebookexternalhit|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|headlesschrome|uptimerobot|pingdom)\")"
+          }
+        ],
+        "query": "Filtered (Exclude Bots & Internal IPs) : -is_bot:true -is_internal:true -request_User-Agent:~\"(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|perplexity|amazonbot|applebot|facebookexternalhit|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|headlesschrome|uptimerobot|pingdom)\" -ClientHost:(127.0.0.0/8 or 10.0.0.0/8 or 172.16.0.0/12 or 192.168.0.0/16),Unfiltered (All Raw Traffic) : *,Bots & Scanners Only : (is_bot:true or request_User-Agent:~\"(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|perplexity|amazonbot|applebot|facebookexternalhit|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|curl/|wget/|python-requests|python-urllib|go-http-client|scrapy|headlesschrome|uptimerobot|pingdom)\")",
+        "type": "custom"
+      },
+      {
+        "current": { "selected": false, "text": "10", "value": "10" },
+        "description": "Minimum hits per 1x1 degree lat/lon bin to plot on World Map",
+        "label": "Min Map Hits",
+        "name": "min_hits",
+        "options": [{ "selected": true, "text": "10", "value": "10" }],
+        "query": "10",
+        "type": "textbox"
+      },
+      {
         "current": { "selected": false, "text": "*", "value": "*" },
         "description": "Free-text or LogsQL filter (e.g., ClientHost:1.2.3.4 or DownstreamStatus:500)",
         "label": "Search / LogsQL",
@@ -427,5 +581,5 @@
   "timezone": "browser",
   "title": "GLYCAM Traefik Access Analytics (AWStats Overview)",
   "uid": "glycam-traefik-awstats",
-  "version": 1
+  "version": 2
 }

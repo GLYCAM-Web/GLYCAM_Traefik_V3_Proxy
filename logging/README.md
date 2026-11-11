@@ -46,19 +46,27 @@ bash logging/split-and-backfill-existing-logs.sh
 
 When `bash start.sh` runs, it deploys both `docker-compose.traefik.swarm.yml` and `docker-compose.logging.swarm.yml` (unless `export ENABLE_LOGGING_STACK="NO"` is set in `config.bash`).
 
-### Configuration (`config.bash`)
-You can optionally set credentials in `config.bash`:
+### Configuration (`config.bash` & `logging/internal_ips.local.conf`)
+Set your credentials in `config.bash` (copied from `config.bash.example`, `chmod 600 config.bash`):
 ```bash
 export LE_EMAIL="your@email.address"
 export GRAFANA_ADMIN_USER="admin"
 export GRAFANA_ADMIN_PASSWORD="your-strong-password"
 ```
 
+To exclude internal lab/team IP addresses or subnets from visitor statistics without putting private IPs in git-tracked files:
+1. Edit `logging/internal_ips.local.conf` (git-ignored, one IP or CIDR per line, `#` comments allowed), **or**
+2. Set `export INTERNAL_IP_CIDRS="192.0.2.0/24,198.51.100.10/32"` in `config.bash`.
+
+Both `Vector` (via `logging/vector/entrypoint.sh`) and `Grafana` (via `logging/grafana/entrypoint.sh`) automatically load `logging/internal_ips.local.conf` and `INTERNAL_IP_CIDRS` into their runtime configurations at container startup. Standard RFC1918 private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) are always excluded by default.
+
+For 1x1-degree binned world-access maps in Grafana (`Geomap` panel), place `GeoLite2-City.mmdb` in `logging/geoip/GeoLite2-City.mmdb` (git-ignored). If `GeoLite2-City.mmdb` is not present yet, `Vector` automatically starts without GeoIP enrichment rather than failing.
+
 ### Web Interfaces
 - **Grafana**: `http://<swarm-node>:3000`
   - Pre-provisioned under the **Traefik** folder with two dashboards:
-    1. **GLYCAM Traefik Access Analytics (AWStats Overview)**: Full admin view with Total Requests, Unique Visitor IPs, Total Bandwidth, POST/Job Submissions, Traffic History by Host, Top Virtual Hosts, HTTP Status Codes, Top URLs, Top POST Endpoints, Top Client IPs, Top Referrers, Top User-Agents, and a live **Access Log Explorer & Investigation** panel.
-    2. **GLYCAM Public Usage Statistics (Safe for Public Sharing)**: Aggregate usage metrics without raw IP addresses or raw logs, designed to be shared publicly.
+    1. **GLYCAM Traefik Access Analytics (AWStats Overview)**: Full admin view with Total Requests, Unique Visitor IPs, Total Bandwidth, POST/Job Submissions, World-Access Map (1x1-deg binned GeoIP), Traffic History by Host, Top Virtual Hosts, HTTP Status Codes, Top URLs, Top POST Endpoints, Top Client IPs, Top Referrers, Top User-Agents, and a live **Access Log Explorer & Investigation** panel.
+    2. **GLYCAM Public Usage Statistics (Safe for Public Sharing)**: Aggregate usage metrics and 1x1-deg binned World-Access Map without raw IP addresses or raw logs, designed to be shared publicly.
 - **VictoriaLogs Built-in UI (VMUI)**: Kept internal to `traefik_proxy_net` (not exposed on public interfaces). To access it from your workstation, use an SSH port-forward through a temporary container or inspect via Grafana.
 
 ---
@@ -86,11 +94,20 @@ VictoriaLogs indexes every JSON field produced by Traefik automatically. You can
 
 ---
 
-## 5. Securely Publishing Statistics Online at `glycam.org/stats`
+## 5. Per-Website Statistics via `V_2/Statistics` (`glycam.org/stats`, `test.glycam.org/stats`, etc.)
 
-Grafana natively supports running under a URL subpath (such as `https://glycam.org/stats`) via `GF_SERVER_SERVE_FROM_SUB_PATH=true`, which is now pre-configured in `docker-compose.logging.swarm.yml`.
+Both pre-provisioned Grafana dashboards (`traefik-public-summary.json` and `traefik-awstats-overview.json`) include a `$host` template variable (`RequestHost:$host`) so Grafana can display statistics scoped to a single website domain (e.g., `glycam.org`, `test.glycam.org`, `dev.glycam.org`, or `*` for all hosts).
 
-### Step-by-Step Setup for `glycam.org/stats`
+### Option A: `V_2/Statistics` Service in `GLYCAM_Dev_Env` (Recommended)
+Each website deployment in `GLYCAM_Dev_Env/V_2/Statistics` connects to `traefik_proxy_net` and queries Grafana / VictoriaLogs automatically filtered to its own `${DOMAIN}` (`RequestHost:"${DOMAIN}"`):
+- Serves a live public statistics dashboard at `https://<domain>/stats/` showing only stats for `${DOMAIN}`
+- Displays Carbohydrate Sequence & Conformer Build analytics from `analysis_scripts/unique_sequences.bash`
+- Preserves the historical 2025 AWStats report at `/stats/legacy.html` and `/stats/cgi/awstats.pl?config=Glycam-Actual`
+- Optionally embeds or links to the Grafana dashboard pre-filtered via `?var-host=${DOMAIN}&kiosk`
+
+### Option B: Direct Grafana Subpath Routing at `glycam.org/stats`
+
+Grafana also natively supports running under a URL subpath (such as `https://glycam.org/stats`) via `GF_SERVER_SERVE_FROM_SUB_PATH=true`, which is pre-configured in `docker-compose.logging.swarm.yml`.
 
 1. **Configure `config.bash`**:
    ```bash
@@ -111,10 +128,9 @@ Grafana natively supports running under a URL subpath (such as `https://glycam.o
    - "traefik.http.services.grafana.loadbalancer.server.port=3000"
    ```
    *(Note: `priority=500` ensures `glycam.org/stats` matches before the main `glycam.org` website router. Look at `Examples/docker-compose.proxy.swarm.traefik.ratelimits.yml` to make sure `500` is higher than your main website router's priority.)*
-3. **Publish the Public Dashboard**:
-   - Open Grafana (on LAN at `http://<swarm-node>:3000/stats/`), go to **Dashboards -> Traefik -> GLYCAM Public Usage Statistics (Safe for Public Sharing)**.
-   - Click **Share** (top right) -> **Public Dashboard** tab -> enable **Make dashboard public**.
-   - Grafana will provide a public link: `https://glycam.org/stats/public-dashboards/<token>`.
+3. **Filter by Website Host or Publish the Public Dashboard**:
+   - Pass `?var-host=glycam.org` (or `?var-host=test.glycam.org`) in the dashboard URL to instruct Grafana to show only stats for that website.
+   - Or open Grafana (on LAN at `http://<swarm-node>:3000/stats/`), go to **Dashboards -> Traefik -> GLYCAM Public Usage Statistics (Safe for Public Sharing)**, set `Website Host` to the desired domain (or duplicate the dashboard per domain), and click **Share -> Public Dashboard -> Make dashboard public**.
 
 ### Optional: Lock Down `/stats` So Only the Public Dashboard Is Externally Reachable
 
