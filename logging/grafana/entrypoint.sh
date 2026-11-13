@@ -22,7 +22,9 @@ EXTRA_OR_LIST=""
 
 append_cidr() {
     raw="$1"
-    [ -z "${raw}" ] && return 0
+    if [ -z "${raw}" ]; then
+        return 0
+    fi
     case "${raw}" in
         *[!0-9a-fA-F.:/]*)
             return 0
@@ -40,7 +42,9 @@ append_cidr() {
 if [ -f "${LOCAL_IPS_FILE}" ]; then
     while IFS= read -r line || [ -n "${line}" ]; do
         clean="$(printf '%s' "${line}" | sed 's/#.*//; s/[[:space:]]//g')"
-        [ -n "${clean}" ] && append_cidr "${clean}"
+        if [ -n "${clean}" ]; then
+            append_cidr "${clean}"
+        fi
     done < "${LOCAL_IPS_FILE}"
 fi
 
@@ -48,15 +52,18 @@ if [ -n "${INTERNAL_IP_CIDRS:-}" ]; then
     OLD_IFS="${IFS}"
     IFS=", "
     for token in ${INTERNAL_IP_CIDRS}; do
-        [ -n "${token}" ] && append_cidr "${token}"
+        if [ -n "${token}" ]; then
+            append_cidr "${token}"
+        fi
     done
     IFS="${OLD_IFS}"
 fi
 
 if [ -n "${EXTRA_OR_LIST}" ]; then
     for f in "${DST_DIR}"/*.json; do
-        [ -f "$f" ] || continue
-        sed -i "s|192.168.0.0/16|192.168.0.0/16${EXTRA_OR_LIST}|g" "$f"
+        if [ -f "$f" ]; then
+            sed -i "s|192.168.0.0/16|192.168.0.0/16${EXTRA_OR_LIST}|g" "$f"
+        fi
     done
 fi
 

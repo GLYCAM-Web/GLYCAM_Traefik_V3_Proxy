@@ -25,7 +25,9 @@ EXTRA_CIDRS=""
 
 append_cidr() {
     raw="$1"
-    [ -z "${raw}" ] && return 0
+    if [ -z "${raw}" ]; then
+        return 0
+    fi
     # Reject anything with characters outside valid IPv4/IPv6/CIDR charset
     case "${raw}" in
         *[!0-9a-fA-F.:/]*)
@@ -48,7 +50,9 @@ append_cidr() {
 if [ -f "${LOCAL_IPS_FILE}" ]; then
     while IFS= read -r line || [ -n "${line}" ]; do
         clean="$(printf '%s' "${line}" | sed 's/#.*//; s/[[:space:]]//g')"
-        [ -n "${clean}" ] && append_cidr "${clean}"
+        if [ -n "${clean}" ]; then
+            append_cidr "${clean}"
+        fi
     done < "${LOCAL_IPS_FILE}"
 fi
 
@@ -56,7 +60,9 @@ if [ -n "${INTERNAL_IP_CIDRS:-}" ]; then
     OLD_IFS="${IFS}"
     IFS=", "
     for token in ${INTERNAL_IP_CIDRS}; do
-        [ -n "${token}" ] && append_cidr "${token}"
+        if [ -n "${token}" ]; then
+            append_cidr "${token}"
+        fi
     done
     IFS="${OLD_IFS}"
 fi

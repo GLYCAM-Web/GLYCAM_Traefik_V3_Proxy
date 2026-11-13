@@ -20,10 +20,12 @@ transforms:
     inputs:
       - traefik_access_logs
     source: |
-      parsed, err = parse_json(.message)
+      raw_msg = to_string(.message) ?? ""
+      parsed, err = parse_json(raw_msg)
       if err == null && is_object(parsed) {
-        . = parsed
-        if !exists(.RequestPath) || .RequestPath == "" {
+        . = object(parsed) ?? {}
+        req_path = to_string(.RequestPath) ?? ""
+        if req_path == "" {
           .RequestPath = to_string(.RequestAddr) ?? "-"
         }
 
@@ -34,10 +36,10 @@ transforms:
         is_ua_bot = match(ua, r'(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|oai-searchbot|perplexity|amazonbot|applebot|facebookexternalhit|meta-externalagent|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|archive\.org_bot|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|nessus|qualys|acunetix|sqlmap|curl/|wget/|python-requests|python-urllib|go-http-client|java/|libwww-perl|scrapy|headlesschrome|phantomjs|uptimerobot|pingdom|statuscake|datadog)')
         is_scanner_ip = false
         if client_ip != "" {
-          is_scanner_ip, _ = ip_cidr_contains(
+          is_scanner_ip = ip_cidr_contains(
             ["162.142.125.0/24", "167.94.138.0/24", "167.94.145.0/24", "167.94.146.0/24", "167.248.133.0/24", "199.45.154.0/24", "199.45.155.0/24", "206.168.34.0/24", "66.249.64.0/19"],
             client_ip
-          )
+          ) ?? false
         }
         .is_bot = if is_ua_bot || is_scanner_ip { "true" } else { "false" }
 
@@ -47,12 +49,12 @@ transforms:
         # are injected into the runtime config by logging/vector/entrypoint.sh.
         is_internal_ip = false
         if client_ip != "" {
-          is_internal_ip, _ = ip_cidr_contains(
+          is_internal_ip = ip_cidr_contains(
             [
               "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"
             ],
             client_ip
-          )
+          ) ?? false
         }
         .is_internal = if is_internal_ip { "true" } else { "false" }
 
@@ -61,13 +63,14 @@ transforms:
         if client_ip != "" && !is_internal_ip {
           geo, geo_err = get_enrichment_table_record("geolite2_city", {"ip": client_ip})
           if geo_err == null && is_object(geo) {
-            lat = to_float(geo.latitude) ?? 0.0
-            lon = to_float(geo.longitude) ?? 0.0
+            geo_obj = object(geo) ?? {}
+            lat = to_float(geo_obj.latitude) ?? 0.0
+            lon = to_float(geo_obj.longitude) ?? 0.0
             if !(lat == 0.0 && lon == 0.0) {
               .geo_lat = lat
               .geo_lon = lon
-              .geo_country = to_string(geo.country_code) ?? ""
-              .geo_city = to_string(geo.city_name) ?? ""
+              .geo_country = to_string(geo_obj.country_code) ?? ""
+              .geo_city = to_string(geo_obj.city_name) ?? ""
               # 1x1 degree bin centers (matching make_lat-lon_bins.c: floor(lat) + 0.5, floor(lon) + 0.5)
               .geo_lat_bin = floor(lat) + 0.5
               .geo_lon_bin = floor(lon) + 0.5
