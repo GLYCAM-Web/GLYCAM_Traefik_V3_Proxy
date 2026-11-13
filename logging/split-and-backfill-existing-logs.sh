@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Split & Backfill Existing Large Traefik access.log (e.g., 220+ GB)
+# Split & Backfill Traefik Access Logs into VictoriaLogs (with GeoIP & Bot Tags)
 # ==============================================================================
 # Usage:
-#   bash logging/split-and-backfill-existing-logs.sh [--backfill]
+#   # 1. Split active access.log (if unsplit) AND backfill all access-*.log[.gz]
+#   #    archives through Vector (adds GeoIP + is_bot + is_internal) into VictoriaLogs:
+#   bash logging/split-and-backfill-existing-logs.sh --backfill
 #
-# What this script does:
-# 1. Safely renames the current ./ACCESS_LOGS/access.log to
-#    ./ACCESS_LOGS/access-pre-split.log and sends SIGUSR1 to Traefik so live
-#    traffic immediately starts writing to a fresh ./ACCESS_LOGS/access.log.
-# 2. Streams ./ACCESS_LOGS/access-pre-split.log through a fast single-pass awk
-#    splitter that extracts the YYYY-MM month from "StartUTC":"YYYY-MM-..."
-#    (or "StartLocal") and appends each line into ./ACCESS_LOGS/access-YYYY-MM.log.
-# 3. If --backfill is passed, streams each monthly file into VictoriaLogs
-#    (http://127.0.0.1:9428) so all historical months are searchable in Grafana.
-# 4. Compresses completed monthly files into ./ACCESS_LOGS/access-YYYY-MM.log.gz.
-#    (The original access-pre-split.log is kept until you verify and delete it.)
+#   # 2. Wipe existing VictoriaLogs DB first (to avoid duplicates from an earlier
+#   #    partial/unenriched run) and backfill all historical + active logs cleanly:
+#   bash logging/split-and-backfill-existing-logs.sh --backfill --reset-db
+#
+#   # 3. Only split & compress access.log without backfilling VictoriaLogs:
+#   bash logging/split-and-backfill-existing-logs.sh
 # ==============================================================================
 
 set -euo pipefail
@@ -23,80 +20,167 @@ set -euo pipefail
 LOG_DIR="./ACCESS_LOGS"
 ACTIVE_LOG="${LOG_DIR}/access.log"
 STAGING_LOG="${LOG_DIR}/access-pre-split.log"
-VICTORIALOGS_URL="${VICTORIALOGS_URL:-http://127.0.0.1:9428}"
 DO_BACKFILL="NO"
+DO_RESET_DB="NO"
 
-if [[ "${1:-}" == "--backfill" ]]; then
-    DO_BACKFILL="YES"
-fi
+for arg in "$@"; do
+    case "$arg" in
+        --backfill)
+            DO_BACKFILL="YES"
+            ;;
+        --reset-db)
+            DO_RESET_DB="YES"
+            ;;
+        *)
+            echo "Unknown argument: $arg"
+            echo "Usage: bash logging/split-and-backfill-existing-logs.sh [--backfill] [--reset-db]"
+            exit 1
+            ;;
+    esac
+done
 
 if [[ ! -d "${LOG_DIR}" ]]; then
     echo "ERROR: Directory ${LOG_DIR} does not exist. Run this from the repo root."
     exit 1
 fi
 
-if [[ -f "${STAGING_LOG}" ]]; then
-    echo "Found existing ${STAGING_LOG}; resuming split from it..."
+# ------------------------------------------------------------------------------
+# Optional Step 0: Reset VictoriaLogs & Vector checkpoints for a clean backfill
+# ------------------------------------------------------------------------------
+if [[ "${DO_RESET_DB}" == "YES" ]]; then
+    echo "Step 0: Resetting VictoriaLogs database and Vector checkpoints for a clean import..."
+    docker service scale traefik_victorialogs=0 || true
+    sleep 3
+    rm -rf ./logging/data/victorialogs/* ./logging/data/vector/*
+    docker service scale traefik_victorialogs=1 || true
+    echo "  Waiting 5s for VictoriaLogs to start..."
+    sleep 5
+fi
+
+# ------------------------------------------------------------------------------
+# Step 1 & 2: Split multi-month access.log (or access-pre-split.log) if needed
+# ------------------------------------------------------------------------------
+CURRENT_MONTH="$(date -u +%Y-%m)"
+NEED_SPLIT="NO"
+
+if [[ -f "${STAGING_LOG}" && -s "${STAGING_LOG}" ]]; then
+    NEED_SPLIT="YES"
 elif [[ -f "${ACTIVE_LOG}" && -s "${ACTIVE_LOG}" ]]; then
-    echo "Step 1: Rotating ${ACTIVE_LOG} -> ${STAGING_LOG} and signaling Traefik..."
-    mv "${ACTIVE_LOG}" "${STAGING_LOG}"
-    TRAEFIK_CIDS="$(docker ps -q --filter "name=traefik_traefik-reverse-proxy" 2>/dev/null || true)"
-    if [[ -n "${TRAEFIK_CIDS}" ]]; then
-        for CID in ${TRAEFIK_CIDS}; do
-            echo "  Sending SIGUSR1 to Traefik container ${CID}..."
-            docker kill --signal=USR1 "${CID}" >/dev/null
-        done
-    else
-        echo "  NOTE: No running Traefik container found; skipped SIGUSR1."
+    # Check if the first line of access.log belongs to an older month than CURRENT_MONTH
+    FIRST_LINE="$(head -n 1 "${ACTIVE_LOG}" || true)"
+    if [[ -n "${FIRST_LINE}" ]] && ! grep -q "\"${CURRENT_MONTH}" <<< "${FIRST_LINE}"; then
+        echo "Step 1: Rotating multi-month ${ACTIVE_LOG} -> ${STAGING_LOG} and signaling Traefik..."
+        mv "${ACTIVE_LOG}" "${STAGING_LOG}"
+        TRAEFIK_CIDS="$(docker ps -q --filter "name=traefik_traefik-reverse-proxy" 2>/dev/null || true)"
+        if [[ -n "${TRAEFIK_CIDS}" ]]; then
+            for CID in ${TRAEFIK_CIDS}; do
+                echo "  Sending SIGUSR1 to Traefik container ${CID}..."
+                docker kill --signal=USR1 "${CID}" >/dev/null
+            done
+        fi
+        sleep 2
+        NEED_SPLIT="YES"
     fi
-    sleep 2
-else
-    echo "Nothing to split: ${ACTIVE_LOG} does not exist or is empty."
-    exit 0
 fi
 
-echo "Step 2: Splitting ${STAGING_LOG} into monthly files (${LOG_DIR}/access-YYYY-MM.log)..."
-echo "        (For a ~220 GB file, this single-pass awk stream typically takes ~8-15 minutes.)"
-
-awk -v logdir="${LOG_DIR}" '
-{
-    month = "unknown"
-    if (match($0, /"StartUTC":"[0-9]{4}-[0-9]{2}/)) {
-        month = substr($0, RSTART + 12, 7)
-    } else if (match($0, /"StartLocal":"[0-9]{4}-[0-9]{2}/)) {
-        month = substr($0, RSTART + 14, 7)
-    } else if (match($0, /"time":"[0-9]{4}-[0-9]{2}/)) {
-        month = substr($0, RSTART + 8, 7)
+if [[ "${NEED_SPLIT}" == "YES" ]]; then
+    echo "Step 2: Splitting ${STAGING_LOG} into monthly files (${LOG_DIR}/access-YYYY-MM.log)..."
+    awk -v logdir="${LOG_DIR}" '
+    {
+        month = "unknown"
+        if (match($0, /"StartUTC":"[0-9]{4}-[0-9]{2}/)) {
+            month = substr($0, RSTART + 12, 7)
+        } else if (match($0, /"StartLocal":"[0-9]{4}-[0-9]{2}/)) {
+            month = substr($0, RSTART + 14, 7)
+        } else if (match($0, /"time":"[0-9]{4}-[0-9]{2}/)) {
+            month = substr($0, RSTART + 8, 7)
+        }
+        outfile = logdir "/access-" month ".log"
+        print $0 >> outfile
     }
-    outfile = logdir "/access-" month ".log"
-    print $0 >> outfile
-}
-' "${STAGING_LOG}"
-
-echo "Step 2 complete. Monthly files created:"
-ls -lh "${LOG_DIR}"/access-[0-9][0-9][0-9][0-9]-[0-9][0-9].log 2>/dev/null || true
-
-if [[ "${DO_BACKFILL}" == "YES" ]]; then
-    echo "Step 3: Backfilling monthly files into VictoriaLogs over traefik_proxy_net..."
-    for f in "${LOG_DIR}"/access-[0-9][0-9][0-9][0-9]-[0-9][0-9].log; do
-        [[ -e "$f" ]] || continue
-        echo "  Ingesting $f ..."
-        docker run --rm -i --network traefik_proxy_net curlimages/curl:8.11.0 \
-            -sS -X POST "http://victorialogs:9428/insert/jsonline?_stream_fields=RequestHost,ServiceName&_time_field=StartUTC&_msg_field=RequestPath" \
-            -H "Content-Type: application/stream+json" \
-            --data-binary @- < "$f"
-        echo "  Done ingesting $f."
-    done
+    ' "${STAGING_LOG}"
+    echo "  Split complete."
+else
+    echo "Step 1-2: No unsplit multi-month access.log found; proceeding to existing monthly archives."
 fi
 
-echo "Step 4: Compressing monthly files with gzip..."
-for f in "${LOG_DIR}"/access-[0-9][0-9][0-9][0-9]-[0-9][0-9].log; do
+# ------------------------------------------------------------------------------
+# Step 3: Backfill all monthly archives (.log and .log.gz) through Vector
+#         so every historical entry gets GeoIP + is_bot + is_internal fields!
+# ------------------------------------------------------------------------------
+if [[ "${DO_BACKFILL}" == "YES" ]]; then
+    if [[ -f ./config.bash ]]; then
+        # shellcheck disable=SC1091
+        source ./config.bash
+    fi
+
+    echo "Step 3: Backfilling historical monthly archives through Vector (GeoIP + bot/internal enrichment)..."
+    shopt -s nullglob
+    ARCHIVES=(
+        "${LOG_DIR}"/access-[0-9][0-9][0-9][0-9]-[0-9][0-9]*.log.gz
+        "${LOG_DIR}"/access-[0-9][0-9][0-9][0-9]-[0-9][0-9]*.log
+    )
+    shopt -u nullglob
+
+    if [[ ${#ARCHIVES[@]} -eq 0 ]]; then
+        echo "  WARNING: No ${LOG_DIR}/access-YYYY-MM.log[.gz] archives found to backfill."
+    else
+        ABS_REPO="$(pwd)"
+        for archive in "${ARCHIVES[@]}"; do
+            [[ -e "${archive}" ]] || continue
+            echo "  -> Enriching and ingesting ${archive} into VictoriaLogs..."
+            if [[ "${archive}" == *.gz ]]; then
+                DECOMPRESS_CMD=(gzip -dc "${archive}")
+            else
+                DECOMPRESS_CMD=(cat "${archive}")
+            fi
+
+            "${DECOMPRESS_CMD[@]}" | docker run --rm -i \
+                --network traefik_proxy_net \
+                --entrypoint /bin/sh \
+                -e INTERNAL_IP_CIDRS="${INTERNAL_IP_CIDRS:-}" \
+                -v "${ABS_REPO}/logging/vector/vector.yaml:/etc/vector/vector.yaml:ro" \
+                -v "${ABS_REPO}/logging/vector/entrypoint.sh:/etc/vector/entrypoint.sh:ro" \
+                -v "${ABS_REPO}/logging/geoip:/etc/vector/geoip:ro" \
+                -v "${ABS_REPO}/logging:/etc/logging-config:ro" \
+                timberio/vector:0.42.0-alpine -c '
+                    sed "s|exec vector --config.*|true|" /etc/vector/entrypoint.sh > /tmp/prep.sh
+                    sh /tmp/prep.sh
+                    sed "/^sources:/,/^transforms:/c\\
+sources:\\
+  traefik_access_logs:\\
+    type: stdin\\
+\\
+transforms:" /tmp/vector.yaml > /tmp/vector_stdin.yaml
+                    exec vector --config /tmp/vector_stdin.yaml --quiet
+                '
+            echo "     Finished ${archive}."
+        done
+    fi
+fi
+
+# ------------------------------------------------------------------------------
+# Step 4: Compress any uncompressed access-YYYY-MM.log files
+# ------------------------------------------------------------------------------
+echo "Step 4: Ensuring all monthly access-YYYY-MM.log archives are gzip-compressed..."
+shopt -s nullglob
+UNCOMPRESSED=("${LOG_DIR}"/access-[0-9][0-9][0-9][0-9]-[0-9][0-9]*.log)
+shopt -u nullglob
+
+for f in "${UNCOMPRESSED[@]}"; do
     [[ -e "$f" ]] || continue
     echo "  Compressing $f -> ${f}.gz ..."
     gzip -9 "$f"
 done
 
+if [[ "${DO_RESET_DB}" == "YES" ]]; then
+    echo "Restarting live traefik_vector service to re-read current ${ACTIVE_LOG}..."
+    docker service update --force traefik_vector || true
+fi
+
 echo ""
 echo "All done!"
-echo "Once you have verified your new ${LOG_DIR}/access-YYYY-MM.log.gz archives, you can remove:"
-echo "  rm ${STAGING_LOG}"
+if [[ -f "${STAGING_LOG}" ]]; then
+    echo "Once you have verified your archives and Grafana stats, you can remove the staging copy:"
+    echo "  rm ${STAGING_LOG}"
+fi
