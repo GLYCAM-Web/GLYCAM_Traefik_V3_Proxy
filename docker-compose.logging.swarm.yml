@@ -59,8 +59,8 @@ services:
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
       - GF_INSTALL_PLUGINS=victoriametrics-logs-datasource
       - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
-      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000/stats/}
-      - GF_SERVER_SERVE_FROM_SUB_PATH=${GRAFANA_SERVE_FROM_SUB_PATH:-true}
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-https://${GRAFANA_HOST:-localhost}${GRAFANA_SUBPATH:-/}}
+      - GF_SERVER_SERVE_FROM_SUB_PATH=${GRAFANA_SERVE_FROM_SUB_PATH:-false}
       - INTERNAL_IP_CIDRS=${INTERNAL_IP_CIDRS:-}
     networks:
       - proxy_net
@@ -80,15 +80,18 @@ services:
         constraints:
           - node.labels.traefik == true
       labels:
-        # Uncomment below and set GRAFANA_HOST / GRAFANA_SUBPATH in config.bash
-        # to expose ONLY Grafana Public Dashboards at https://<host>/stats via Traefik HTTPS
-        # (keeping /stats/login and admin APIs off the public internet):
-        # - "traefik.enable=true"
-        # - "traefik.swarm.network=traefik_proxy_net"
-        # - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_HOST:-example.org}`) && (PathPrefix(`${GRAFANA_SUBPATH:-/stats}/public-dashboards`) || PathPrefix(`${GRAFANA_SUBPATH:-/stats}/api/public`) || PathPrefix(`${GRAFANA_SUBPATH:-/stats}/public/`))"
-        # - "traefik.http.routers.grafana.priority=500"
-        # - "traefik.http.routers.grafana.entrypoints=websecure"
-        # - "traefik.http.routers.grafana.tls=true"
-        # - "traefik.http.routers.grafana.tls.certresolver=le"
-        # - "traefik.http.services.grafana.loadbalancer.server.port=3000"
-        - "traefik.enable=false"
+        - "traefik.enable=${GRAFANA_TRAEFIK_ENABLE:-true}"
+        - "traefik.swarm.network=traefik_proxy_net"
+        - "traefik.http.routers.grafana.rule=Host(`${GRAFANA_HOST:-localhost}`) && PathPrefix(`${GRAFANA_SUBPATH:-/}`)"
+        - "traefik.http.routers.grafana.priority=500"
+        - "traefik.http.routers.grafana.entrypoints=websecure"
+        - "traefik.http.routers.grafana.tls=true"
+        - "traefik.http.routers.grafana.tls.certresolver=le"
+        - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+        # Redirect HTTP -> HTTPS for Grafana
+        - "traefik.http.middlewares.grafana-https-redirect.redirectscheme.scheme=https"
+        - "traefik.http.routers.grafana-http.rule=Host(`${GRAFANA_HOST:-localhost}`) && PathPrefix(`${GRAFANA_SUBPATH:-/}`)"
+        - "traefik.http.routers.grafana-http.priority=500"
+        - "traefik.http.routers.grafana-http.entrypoints=web"
+        - "traefik.http.routers.grafana-http.middlewares=grafana-https-redirect@swarm"
+

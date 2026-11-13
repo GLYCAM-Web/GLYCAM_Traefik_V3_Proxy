@@ -3,6 +3,7 @@
 *.swp
 *~
 *git-ignore-me*
+.obsidian
 
 ## Repo-specific Patterns
 logs

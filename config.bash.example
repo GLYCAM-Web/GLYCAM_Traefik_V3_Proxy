@@ -20,11 +20,17 @@ export ENABLE_LOGGING_STACK="YES"
 export GRAFANA_ADMIN_USER="admin"
 export GRAFANA_ADMIN_PASSWORD="change-me-to-a-strong-password"
 
-# 4. Optional: Grafana Subpath / Public URL Settings
-# export GRAFANA_HOST="example.org"
+# 4. Optional: Grafana Host / Subpath / Public URL Settings
+# Option A — Dedicated subdomain (e.g., https://grafana.swarmtest.glycam.org/):
+# export GRAFANA_HOST="grafana.swarmtest.glycam.org"
+# export GRAFANA_COOKIE_SECURE="true"
+#
+# Option B — Subpath under main domain (e.g., https://glycam.org/stats/):
+# export GRAFANA_HOST="glycam.org"
 # export GRAFANA_SUBPATH="/stats"
-# export GRAFANA_ROOT_URL="http://localhost:3000/stats/"
-# export GRAFANA_COOKIE_SECURE="false"
+# export GRAFANA_ROOT_URL="https://glycam.org/stats/"
+# export GRAFANA_SERVE_FROM_SUB_PATH="true"
+# export GRAFANA_COOKIE_SECURE="true"
 
 # 5. Optional: Internal / Team IP CIDRs to Exclude from Public Usage Statistics
 # You can list comma-separated CIDRs here OR place one IP/CIDR per line in
