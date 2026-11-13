@@ -34,12 +34,14 @@ transforms:
 
         # 1. Classify known bots / crawlers / spiders / scanners
         is_ua_bot = match(ua, r'(?i)(bot|crawl|spider|slurp|ahrefs|semrush|bingpreview|bytespider|gptbot|claudebot|chatgpt|oai-searchbot|perplexity|amazonbot|applebot|facebookexternalhit|meta-externalagent|mj12bot|dotbot|petalbot|yandex|baiduspider|sogou|duckduckbot|ia_archiver|archive\.org_bot|censys|shodan|zgrab|masscan|nmap|nikto|nuclei|nessus|qualys|acunetix|sqlmap|curl/|wget/|python-requests|python-urllib|go-http-client|java/|libwww-perl|scrapy|headlesschrome|phantomjs|uptimerobot|pingdom|statuscake|datadog)')
+        scanner_cidrs = ["162.142.125.0/24", "167.94.138.0/24", "167.94.145.0/24", "167.94.146.0/24", "167.248.133.0/24", "199.45.154.0/24", "199.45.155.0/24", "206.168.34.0/24", "66.249.64.0/19"]
         is_scanner_ip = false
         if client_ip != "" {
-          is_scanner_ip = ip_cidr_contains(
-            ["162.142.125.0/24", "167.94.138.0/24", "167.94.145.0/24", "167.94.146.0/24", "167.248.133.0/24", "199.45.154.0/24", "199.45.155.0/24", "206.168.34.0/24", "66.249.64.0/19"],
-            client_ip
-          ) ?? false
+          for_each(scanner_cidrs) -> |_idx, cidr| {
+            if (ip_cidr_contains(cidr, client_ip) ?? false) {
+              is_scanner_ip = true
+            }
+          }
         }
         .is_bot = if is_ua_bot || is_scanner_ip { "true" } else { "false" }
 
@@ -47,14 +49,16 @@ transforms:
         # Standard RFC1918 private ranges are listed below; additional local CIDRs
         # from logging/internal_ips.local.conf or INTERNAL_IP_CIDRS in config.bash
         # are injected into the runtime config by logging/vector/entrypoint.sh.
+        internal_cidrs = [
+          "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"
+        ]
         is_internal_ip = false
         if client_ip != "" {
-          is_internal_ip = ip_cidr_contains(
-            [
-              "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"
-            ],
-            client_ip
-          ) ?? false
+          for_each(internal_cidrs) -> |_idx, cidr| {
+            if (ip_cidr_contains(cidr, client_ip) ?? false) {
+              is_internal_ip = true
+            }
+          }
         }
         .is_internal = if is_internal_ip { "true" } else { "false" }
 
@@ -62,15 +66,14 @@ transforms:
         # BEGIN_GEOIP_ENRICHMENT
         if client_ip != "" && !is_internal_ip {
           geo, geo_err = get_enrichment_table_record("geolite2_city", {"ip": client_ip})
-          if geo_err == null && is_object(geo) {
-            geo_obj = object(geo) ?? {}
-            lat = to_float(geo_obj.latitude) ?? 0.0
-            lon = to_float(geo_obj.longitude) ?? 0.0
+          if geo_err == null {
+            lat = to_float(geo.latitude) ?? 0.0
+            lon = to_float(geo.longitude) ?? 0.0
             if !(lat == 0.0 && lon == 0.0) {
               .geo_lat = lat
               .geo_lon = lon
-              .geo_country = to_string(geo_obj.country_code) ?? ""
-              .geo_city = to_string(geo_obj.city_name) ?? ""
+              .geo_country = to_string(geo.country_code) ?? ""
+              .geo_city = to_string(geo.city_name) ?? ""
               # 1x1 degree bin centers (matching make_lat-lon_bins.c: floor(lat) + 0.5, floor(lon) + 0.5)
               .geo_lat_bin = floor(lat) + 0.5
               .geo_lon_bin = floor(lon) + 0.5
