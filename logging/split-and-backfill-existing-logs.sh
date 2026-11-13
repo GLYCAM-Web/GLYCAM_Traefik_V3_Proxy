@@ -51,7 +51,11 @@ if [[ "${DO_RESET_DB}" == "YES" ]]; then
     echo "Step 0: Resetting VictoriaLogs database and Vector checkpoints for a clean import..."
     docker service scale traefik_victorialogs=0 || true
     sleep 3
-    rm -rf ./logging/data/victorialogs/* ./logging/data/vector/*
+    if ! rm -rf ./logging/data/victorialogs/* ./logging/data/vector/* 2>/dev/null; then
+        echo "  Files are owned by root (created by Docker); cleaning via ephemeral container..."
+        docker run --rm -v "$(pwd)/logging/data:/data" alpine:3.20 \
+            sh -c 'rm -rf /data/victorialogs/* /data/vector/*'
+    fi
     docker service scale traefik_victorialogs=1 || true
     echo "  Waiting 5s for VictoriaLogs to start..."
     sleep 5
@@ -63,8 +67,16 @@ fi
 CURRENT_MONTH="$(date -u +%Y-%m)"
 NEED_SPLIT="NO"
 
+shopt -s nullglob
+EXISTING_MONTHLY=("${LOG_DIR}"/access-[0-9][0-9][0-9][0-9]-[0-9][0-9]*.log "${LOG_DIR}"/access-[0-9][0-9][0-9][0-9]-[0-9][0-9]*.log.gz)
+shopt -u nullglob
+
 if [[ -f "${STAGING_LOG}" && -s "${STAGING_LOG}" ]]; then
-    NEED_SPLIT="YES"
+    if [[ ${#EXISTING_MONTHLY[@]} -gt 0 ]]; then
+        echo "Step 1-2: Monthly archives already exist; skipping re-split of ${STAGING_LOG} to avoid duplicating lines."
+    else
+        NEED_SPLIT="YES"
+    fi
 elif [[ -f "${ACTIVE_LOG}" && -s "${ACTIVE_LOG}" ]]; then
     # Check if the first line of access.log belongs to an older month than CURRENT_MONTH
     FIRST_LINE="$(head -n 1 "${ACTIVE_LOG}" || true)"

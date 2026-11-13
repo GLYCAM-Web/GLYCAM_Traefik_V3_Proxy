@@ -82,4 +82,13 @@ sleep 10
 log_msg "Compressing ${ROTATED_FILE} -> ${ROTATED_FILE}.gz"
 gzip -9 "${ROTATED_FILE}"
 
+# Match ownership of rotated archive, reopened access.log, and rotation.log
+# to the host owner of /var/log/ACCESS_LOGS (e.g., webdev:webdev).
+TARGET_OWNER="$(stat -c '%u:%g' "${LOG_DIR}" 2>/dev/null || true)"
+if [ -n "${TARGET_OWNER}" ]; then
+    chown "${TARGET_OWNER}" "${ROTATED_FILE}.gz" 2>/dev/null || true
+    [ -f "${ACTIVE_LOG}" ] && chown "${TARGET_OWNER}" "${ACTIVE_LOG}" 2>/dev/null || true
+    [ -f "${ROTATE_LOG}" ] && chown "${TARGET_OWNER}" "${ROTATE_LOG}" 2>/dev/null || true
+fi
+
 log_msg "Rotation complete: ${ROTATED_FILE}.gz"
