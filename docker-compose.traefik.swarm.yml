@@ -118,3 +118,4 @@ services:
 networks:
   proxy_net:
     name: "traefik_proxy_net"
+    attachable: true

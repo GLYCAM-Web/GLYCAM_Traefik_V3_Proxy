@@ -44,21 +44,29 @@ if [[ ! -d "${LOG_DIR}" ]]; then
     exit 1
 fi
 
+IS_SWARM_MANAGER="$(docker info --format '{{.Swarm.ControlAvailable}}' 2>/dev/null || echo "false")"
+
 # ------------------------------------------------------------------------------
 # Optional Step 0: Reset VictoriaLogs & Vector checkpoints for a clean backfill
 # ------------------------------------------------------------------------------
 if [[ "${DO_RESET_DB}" == "YES" ]]; then
     echo "Step 0: Resetting VictoriaLogs database and Vector checkpoints for a clean import..."
-    docker service scale traefik_victorialogs=0 || true
-    sleep 3
+    if [[ "${IS_SWARM_MANAGER}" == "true" ]]; then
+        docker service scale traefik_victorialogs=0 || true
+        sleep 3
+    else
+        echo "  NOTE: Not on a Swarm manager node; skipping 'docker service scale'."
+    fi
     if ! rm -rf ./logging/data/victorialogs/* ./logging/data/vector/* 2>/dev/null; then
         echo "  Files are owned by root (created by Docker); cleaning via ephemeral container..."
         docker run --rm -v "$(pwd)/logging/data:/data" alpine:3.20 \
             sh -c 'rm -rf /data/victorialogs/* /data/vector/*'
     fi
-    docker service scale traefik_victorialogs=1 || true
-    echo "  Waiting 5s for VictoriaLogs to start..."
-    sleep 5
+    if [[ "${IS_SWARM_MANAGER}" == "true" ]]; then
+        docker service scale traefik_victorialogs=1 || true
+        echo "  Waiting 5s for VictoriaLogs to start..."
+        sleep 5
+    fi
 fi
 
 # ------------------------------------------------------------------------------
@@ -134,6 +142,20 @@ if [[ "${DO_BACKFILL}" == "YES" ]]; then
     )
     shopt -u nullglob
 
+    VECTOR_CID="$(docker ps -q --filter "name=traefik_vector" 2>/dev/null | head -n 1 || true)"
+    NET_ATTACHABLE="$(docker network inspect traefik_proxy_net --format '{{.Attachable}}' 2>/dev/null || echo "false")"
+
+    if [[ -z "${VECTOR_CID}" && "${NET_ATTACHABLE}" != "true" ]]; then
+        echo ""
+        echo "ERROR: Cannot reach VictoriaLogs from this node because:"
+        echo "  1. 'traefik_vector' is not running on this host ($(hostname)), AND"
+        echo "  2. 'traefik_proxy_net' is not manually attachable."
+        echo ""
+        echo "Please run the backfill on the Swarm node where Traefik/Vector is running (e.g., hoar):"
+        echo "  bash logging/split-and-backfill-existing-logs.sh --backfill"
+        exit 1
+    fi
+
     if [[ ${#ARCHIVES[@]} -eq 0 ]]; then
         echo "  WARNING: No ${LOG_DIR}/access-YYYY-MM.log[.gz] archives found to backfill."
     else
@@ -147,25 +169,43 @@ if [[ "${DO_BACKFILL}" == "YES" ]]; then
                 DECOMPRESS_CMD=(cat "${archive}")
             fi
 
-            "${DECOMPRESS_CMD[@]}" | docker run --rm -i \
-                --network traefik_proxy_net \
-                --entrypoint /bin/sh \
-                -e INTERNAL_IP_CIDRS="${INTERNAL_IP_CIDRS:-}" \
-                -v "${ABS_REPO}/logging/vector/vector.yaml:/etc/vector/vector.yaml:ro" \
-                -v "${ABS_REPO}/logging/vector/entrypoint.sh:/etc/vector/entrypoint.sh:ro" \
-                -v "${ABS_REPO}/logging/geoip:/etc/vector/geoip:ro" \
-                -v "${ABS_REPO}/logging:/etc/logging-config:ro" \
-                timberio/vector:0.42.0-alpine -c '
-                    sed "s|exec vector --config.*|true|" /etc/vector/entrypoint.sh > /tmp/prep.sh
-                    sh /tmp/prep.sh
+            if [[ -n "${VECTOR_CID}" ]]; then
+                # Exec inside the running traefik_vector container (already on traefik_proxy_net
+                # with /tmp/vector.yaml prepared by entrypoint.sh)
+                "${DECOMPRESS_CMD[@]}" | docker exec -i "${VECTOR_CID}" sh -c '
+                    mkdir -p /tmp/vector_backfill_data
+                    sed "s|data_dir: .*|data_dir: \"/tmp/vector_backfill_data\"|" /tmp/vector.yaml | \
                     sed "/^sources:/,/^transforms:/c\\
 sources:\\
   traefik_access_logs:\\
     type: stdin\\
 \\
-transforms:" /tmp/vector.yaml > /tmp/vector_stdin.yaml
+transforms:" > /tmp/vector_stdin.yaml
                     exec vector --config /tmp/vector_stdin.yaml --quiet
                 '
+            else
+                "${DECOMPRESS_CMD[@]}" | docker run --rm -i \
+                    --network traefik_proxy_net \
+                    --entrypoint /bin/sh \
+                    -e INTERNAL_IP_CIDRS="${INTERNAL_IP_CIDRS:-}" \
+                    -v "${ABS_REPO}/logging/vector/vector.yaml:/etc/vector/vector.yaml:ro" \
+                    -v "${ABS_REPO}/logging/vector/entrypoint.sh:/etc/vector/entrypoint.sh:ro" \
+                    -v "${ABS_REPO}/logging/geoip:/etc/vector/geoip:ro" \
+                    -v "${ABS_REPO}/logging:/etc/logging-config:ro" \
+                    timberio/vector:0.42.0-alpine -c '
+                        sed "s|exec vector --config.*|true|" /etc/vector/entrypoint.sh > /tmp/prep.sh
+                        sh /tmp/prep.sh
+                        mkdir -p /tmp/vector_backfill_data
+                        sed "s|data_dir: .*|data_dir: \"/tmp/vector_backfill_data\"|" /tmp/vector.yaml | \
+                        sed "/^sources:/,/^transforms:/c\\
+sources:\\
+  traefik_access_logs:\\
+    type: stdin\\
+\\
+transforms:" > /tmp/vector_stdin.yaml
+                        exec vector --config /tmp/vector_stdin.yaml --quiet
+                    '
+            fi
             echo "     Finished ${archive}."
         done
     fi
@@ -185,7 +225,7 @@ for f in "${UNCOMPRESSED[@]}"; do
     gzip -9 "$f"
 done
 
-if [[ "${DO_RESET_DB}" == "YES" ]]; then
+if [[ "${DO_RESET_DB}" == "YES" && "${IS_SWARM_MANAGER}" == "true" ]]; then
     echo "Restarting live traefik_vector service to re-read current ${ACTIVE_LOG}..."
     docker service update --force traefik_vector || true
 fi
